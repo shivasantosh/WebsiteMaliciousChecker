@@ -1,0 +1,90 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.dao;
+
+import com.lxrinsights.model.NeOrder;
+import com.lxrinsights.model.NeTracking;
+import com.lxrinsights.model.NeTrackingInfo;
+import java.math.BigInteger;
+import org.hibernate.Query;
+import org.hibernate.SQLQuery;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ *
+ * @author santosh
+ */
+@Repository
+@Transactional
+public class TrackDataProcessorDaoImpl implements TrackDataProcessorDao {
+
+    @Autowired
+    private SessionFactory sessionFactory;
+
+    @Override
+    public void insertNeTracking(NeTracking neTracking) {
+
+        Session session = sessionFactory.getCurrentSession();
+        session.save(neTracking);
+
+    }
+
+    @Override
+    public void insertNeTrackingInfo(NeTrackingInfo neTrackingInfo) {
+        neTrackingInfo.setNeTrackingId(0);
+//        long ipFrom = convertIpToInteger();
+        
+        
+        Session session = sessionFactory.getCurrentSession();
+        /*Converting Ipaddress to long*/
+         SQLQuery query = session.createSQLQuery("SELECT IP2INT('"+neTrackingInfo.getTrackingInfo().getIpAddress()+"')");
+        long ipAddressLong = ((BigInteger) query.list().get(0)).longValue();
+        /*Fetching nearest Ip from IpLocation table*/
+        long ipFrom = fetchIpFromIP2Location(ipAddressLong);
+        neTrackingInfo.setIpFrom(ipFrom);
+        session.save(neTrackingInfo);
+    }
+
+    @Override
+    public void insertOrders(NeOrder neOrder) {
+
+        Session session = sessionFactory.getCurrentSession();
+        session.saveOrUpdate(neOrder);
+    }
+
+    private long convertIpToInteger(String IpAddress) {
+        Session session = sessionFactory.getCurrentSession();
+        SQLQuery query = session.createSQLQuery("SELECT IP2INT("+IpAddress+")");
+        long val = ((BigInteger) query.list().get(0)).longValue();
+        return val;
+    }
+    
+    
+    private int fetchIpFromIP2Location(long ipAddress){
+        
+        Session session = sessionFactory.getCurrentSession();
+        
+        String SQL = "select case when y.t < y.t1 then (select IP_FROM "
+            + " from IP2LOCATION where IP_FROM =( select max(IP_FROM) from IP2LOCATION where IP_FROM <= "+ipAddress+"))"
+            + " else  (select IP_FROM from IP2LOCATION where IP_TO = (select min(IP_TO) from IP2LOCATION "
+            + " where IP_TO >= "+ipAddress+")) end "
+            + " as ipFrom from (select if("+ipAddress+" < min(x.IP_TO),min(x.IP_TO),("+ipAddress+" - min(x.IP_TO))) as t, "
+            + " if(max(x.IP_FROM)< "+ipAddress+",max(x.IP_FROM),(max(x.IP_FROM)-"+ipAddress+")) as t1 from (select * from IP2LOCATION "
+            + " where IP_FROM =( select max(IP_FROM) from IP2LOCATION where IP_FROM <= "+ipAddress+") or "
+            + " IP_TO = (select min(IP_TO) from IP2LOCATION where IP_TO >= "+ipAddress+"))x)y";
+        
+        
+        Query query =  session.createSQLQuery(SQL);
+        return (int) query.list().get(0);
+        
+    }
+    
+
+}

@@ -1,0 +1,35 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.scheduler;
+
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.S3Object;
+import com.lxrinsights.service.LogProcessorService;
+
+/**
+ *
+ * @author santosh
+ */
+public class AnalyticsProcessorThread implements Runnable {
+
+    private final LogProcessorService logProcessorService;
+    private final AmazonS3 s3Client;
+    private final String keyName;
+    private final String destinationKeyName;
+
+    public AnalyticsProcessorThread(LogProcessorService logProcessorService, AmazonS3 s3Client, String keyName, String destinationKeyName) {
+        this.logProcessorService = logProcessorService;
+        this.s3Client = s3Client;
+        this.keyName = keyName;
+        this.destinationKeyName = destinationKeyName;
+    }
+
+    @Override
+    public void run() {
+        logProcessorService.fileParser(s3Client, keyName, destinationKeyName);
+    }
+
+}

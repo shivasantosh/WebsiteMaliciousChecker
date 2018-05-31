@@ -1,0 +1,147 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import java.io.Serializable;
+import javax.persistence.Column;
+
+/**
+ *
+ * @author santosh
+ */
+public class NeOrder implements Serializable{
+    
+    @Column(name = "ORDER_ID")
+    private long orderId;
+    @Column(name = "CLIENT_ORDER_ID")
+    private String clientOrderId;
+    @Column(name = "TIME_STAMP")
+    private String timestamp;
+    @Column(name = "TOTAL")
+    private double total;
+    @Column(name = "TAX")
+    private double tax;
+    @Column(name = "SHIPPING")
+    private double shipping;
+    @Column(name = "BUS_ASS_ID")
+    private int businessAssociateId;
+    @Column(name = "KEYWORD_ID")
+    private int keywordId;
+    @Column(name = "TOTAL_MARGIN")
+    private int totalMargin;
+    @Column(name = "NE_TRACKING_ID")
+    private long neTrackingId;
+    @Column(name = "ITEMS_COUNT")
+    private int itemsCount;
+    @Column(name = "LINE_COUNT")
+    private int lineCount;
+    @Column(name = "CONV_TYPE")
+    private int convType;
+    @Column(name = "ACCOUNT_DATE")
+    private String accountDate;
+    @Column(name = "TDIFF")
+    private int timediff;
+
+    public long getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(long orderId) {
+        this.orderId = orderId;
+    }
+
+    public String getClientOrderId() {
+        return clientOrderId;
+    }
+
+    public void setClientOrderId(String clientOrderId) {
+        this.clientOrderId = clientOrderId;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public int getBusinessAssociateId() {
+        return businessAssociateId;
+    }
+
+    public void setBusinessAssociateId(int businessAssociateId) {
+        this.businessAssociateId = businessAssociateId;
+    }
+
+    public int getKeywordId() {
+        return keywordId;
+    }
+
+    public void setKeywordId(int keywordId) {
+        this.keywordId = keywordId;
+    }
+
+    public int getTotalMargin() {
+        return totalMargin;
+    }
+
+    public void setTotalMargin(int totalMargin) {
+        this.totalMargin = totalMargin;
+    }
+
+    public long getNeTrackingId() {
+        return neTrackingId;
+    }
+
+    public void setNeTrackingId(long neTrackingId) {
+        this.neTrackingId = neTrackingId;
+    }
+
+    public int getItemsCount() {
+        return itemsCount;
+    }
+
+    public void setItemsCount(int itemsCount) {
+        this.itemsCount = itemsCount;
+    }
+
+    public int getLineCount() {
+        return lineCount;
+    }
+
+    public void setLineCount(int lineCount) {
+        this.lineCount = lineCount;
+    }
+
+    public int getConvType() {
+        return convType;
+    }
+
+    public void setConvType(int convType) {
+        this.convType = convType;
+    }
+
+    public String getAccountDate() {
+        return accountDate;
+    }
+
+    public void setAccountDate(String accountDate) {
+        this.accountDate = accountDate;
+    }
+
+    public int getTimediff() {
+        return timediff;
+    }
+
+    public void setTimediff(int timediff) {
+        this.timediff = timediff;
+    }
+    
+    
+    
+    
+}

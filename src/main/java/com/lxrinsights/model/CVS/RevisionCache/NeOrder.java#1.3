@@ -1,0 +1,256 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import java.io.Serializable;
+import java.util.List;
+import javax.persistence.CascadeType;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.OneToMany;
+import javax.persistence.OneToOne;
+import javax.persistence.Table;
+import javax.persistence.Transient;
+
+/**
+ *
+ * @author santosh
+ */
+@Entity
+@Table(name = "NE_ORDER_NEW")
+public class NeOrder implements Serializable{
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "ORDER_ID")
+    private long orderId;
+    @Column(name = "CLIENT_ORDER_ID")
+    private String clientOrderId;
+    @Column(name = "TIME_STAMP")
+    private String timestamp;
+    @Column(name = "TOTAL")
+    private double total;
+    @Column(name = "TAX")
+    private double tax;
+    @Column(name = "SHIPPING")
+    private double shipping;
+    @Column(name = "BUS_ASS_ID")
+    private int businessAssociateId;
+    @Column(name = "KEYWORD_ID")
+    private int keywordId;
+    @Column(name = "TOTAL_MARGIN")
+    private double totalMargin;
+    @OneToOne
+    @JoinColumn(name = "NE_TRACKING_INFO_ID")
+    private NeTrackingInfo neTrackingInfo;
+    @Column(name = "ITEMS_COUNT")
+    private int itemsCount;
+    @Column(name = "LINE_COUNT")
+    private int lineCount;
+    @Column(name = "CONV_TYPE")
+    private int convType;
+    @Column(name = "ACCOUNT_DATE")
+    private String accountDate;
+    @Column(name = "TDIFF")
+    private int timediff;
+    @OneToMany(cascade=CascadeType.ALL)
+    @JoinColumn(name = "ORDER_ID")
+    private List<NeOrderItems> neOrderItemsList;
+    
+    @Transient
+    private String description;
+    @Transient
+    private String orderValue1;
+    @Transient
+    private String orderValue2;
+    @Transient
+    private String orderValue3;
+    @Transient
+    private String orderValue4;
+    @Transient
+    private String orderValue5;
+
+    public long getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(long orderId) {
+        this.orderId = orderId;
+    }
+
+    public String getClientOrderId() {
+        return clientOrderId;
+    }
+
+    public void setClientOrderId(String clientOrderId) {
+        this.clientOrderId = clientOrderId;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public int getBusinessAssociateId() {
+        return businessAssociateId;
+    }
+
+    public void setBusinessAssociateId(int businessAssociateId) {
+        this.businessAssociateId = businessAssociateId;
+    }
+
+    public int getKeywordId() {
+        return keywordId;
+    }
+
+    public void setKeywordId(int keywordId) {
+        this.keywordId = keywordId;
+    }
+
+    public double getTotalMargin() {
+        return totalMargin;
+    }
+
+    public void setTotalMargin(double totalMargin) {
+        this.totalMargin = totalMargin;
+    }
+
+    public NeTrackingInfo getNeTrackingInfo() {
+        return neTrackingInfo;
+    }
+
+    public void setNeTrackingInfo(NeTrackingInfo neTrackingInfo) {
+        this.neTrackingInfo = neTrackingInfo;
+    }
+
+    public int getItemsCount() {
+        return itemsCount;
+    }
+
+    public void setItemsCount(int itemsCount) {
+        this.itemsCount = itemsCount;
+    }
+
+    public int getLineCount() {
+        return lineCount;
+    }
+
+    public void setLineCount(int lineCount) {
+        this.lineCount = lineCount;
+    }
+
+    public int getConvType() {
+        return convType;
+    }
+
+    public void setConvType(int convType) {
+        this.convType = convType;
+    }
+
+    public String getAccountDate() {
+        return accountDate;
+    }
+
+    public void setAccountDate(String accountDate) {
+        this.accountDate = accountDate;
+    }
+
+    public int getTimediff() {
+        return timediff;
+    }
+
+    public void setTimediff(int timediff) {
+        this.timediff = timediff;
+    }
+
+    public double getTotal() {
+        return total;
+    }
+
+    public void setTotal(double total) {
+        this.total = total;
+    }
+
+    public double getTax() {
+        return tax;
+    }
+
+    public void setTax(double tax) {
+        this.tax = tax;
+    }
+
+    public double getShipping() {
+        return shipping;
+    }
+
+    public void setShipping(double shipping) {
+        this.shipping = shipping;
+    }
+
+    public List<NeOrderItems> getNeOrderItemsList() {
+        return neOrderItemsList;
+    }
+
+    public void setNeOrderItemsList(List<NeOrderItems> neOrderItemsList) {
+        this.neOrderItemsList = neOrderItemsList;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getOrderValue1() {
+        return orderValue1;
+    }
+
+    public void setOrderValue1(String orderValue1) {
+        this.orderValue1 = orderValue1;
+    }
+
+    public String getOrderValue2() {
+        return orderValue2;
+    }
+
+    public void setOrderValue2(String orderValue2) {
+        this.orderValue2 = orderValue2;
+    }
+
+    public String getOrderValue3() {
+        return orderValue3;
+    }
+
+    public void setOrderValue3(String orderValue3) {
+        this.orderValue3 = orderValue3;
+    }
+
+    public String getOrderValue4() {
+        return orderValue4;
+    }
+
+    public void setOrderValue4(String orderValue4) {
+        this.orderValue4 = orderValue4;
+    }
+
+    public String getOrderValue5() {
+        return orderValue5;
+    }
+
+    public void setOrderValue5(String orderValue5) {
+        this.orderValue5 = orderValue5;
+    }
+    
+    
+}

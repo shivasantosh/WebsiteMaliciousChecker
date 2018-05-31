@@ -1,0 +1,90 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.scheduler;
+
+import com.amazonaws.SdkClientException;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.lxrinsights.service.LogProcessorService;
+import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import org.apache.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/**
+ *
+ * @author santosh
+ */
+@Component
+public class S3FilesFetchingTask {
+
+    @Value("${lxr.insights.bucketName}")
+    private String bucketName;
+    @Value("${lxr.insights.destinationKey}")
+    private String destinationKey;
+
+    @Autowired
+    private LogProcessorService logProcessorService;
+
+    private final int poolSize = 10;
+    private final int maxPoolSize = 50;
+    private final long keepAliveTime = 360;
+    private boolean terminatedThread = false;
+    private ThreadPoolExecutor analyticsProcessorThreadPool = null;
+    private final LinkedBlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>();
+
+    private static final Logger LOGGER = Logger.getLogger(S3FilesFetchingTask.class);
+
+    public void fetchFilesFromS3Bucket() {
+
+        AmazonS3 s3Client = new AmazonS3Client(new ProfileCredentialsProvider());
+        try {
+            System.out.println("Downloading an object");
+            ObjectListing objects = s3Client.listObjects(bucketName);
+            List<S3ObjectSummary> objectSummaryList = objects.getObjectSummaries();
+            analyticsProcessorThreadPool = new ThreadPoolExecutor(poolSize, maxPoolSize, keepAliveTime, TimeUnit.SECONDS, blockingQueue);
+            for (S3ObjectSummary s3ObjectSummary : objectSummaryList) {
+                String keyName = s3ObjectSummary.getKey();
+//            String keyName = "adelixir/E1IFBAKSVETRPF.2018-04-24-06.2c7f5488.gz";
+                String destinationKeyName = destinationKey + keyName.split("/")[1];
+
+                AnalyticsProcessorThread analyticsProcessorThread = new AnalyticsProcessorThread(logProcessorService, s3Client, keyName, destinationKeyName);
+                analyticsProcessorThreadPool.execute(analyticsProcessorThread);
+                Thread.sleep(5000);
+            }
+
+            while (!terminatedThread) {
+                try {
+                    int active = analyticsProcessorThreadPool.getActiveCount();
+                    int qued = analyticsProcessorThreadPool.getQueue().size();
+                    if ((active + qued) > 0) {
+                        Thread.sleep(2000);
+                    } else {
+                        LOGGER.info("while shutdown: s3FileFetching Task thread");
+                        analyticsProcessorThreadPool.shutdownNow();
+                        LOGGER.info("************scheduler Completed job s3FileFetching thread*******************");
+                        terminatedThread = true;
+                    }
+                } catch (InterruptedException ex) {
+                    LOGGER.error("in While-- s3FileFetching thread", ex);
+                } catch (Exception ex) {
+                    LOGGER.error("in While Exce-- s3FileFetching thread", ex);
+                }
+            }
+
+        } catch (SdkClientException | InterruptedException e) {
+             LOGGER.error("in While Exce-- s3FileFetching method", e);
+        }
+    }
+
+}

@@ -1,0 +1,1323 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.service;
+
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import com.lxrinsights.dao.TrackDataProcessorDao;
+import com.lxrinsights.model.NeOrder;
+import com.lxrinsights.model.NeOrderItems;
+import com.lxrinsights.model.NeTracking;
+import com.lxrinsights.model.NeTrackingInfo;
+import com.lxrinsights.model.TrackData;
+import com.lxrinsights.model.TrackingInfo;
+import com.lxrinsights.util.CommonFunctions;
+import java.io.IOException;
+import java.net.URLDecoder;
+import java.sql.Timestamp;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Locale;
+import java.util.Scanner;
+import java.util.zip.GZIPInputStream;
+import net.sf.uadetector.OperatingSystem;
+import net.sf.uadetector.ReadableDeviceCategory;
+import net.sf.uadetector.ReadableUserAgent;
+import net.sf.uadetector.UserAgentStringParser;
+import net.sf.uadetector.VersionNumber;
+import net.sf.uadetector.service.UADetectorServiceFactory;
+import org.apache.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+/**
+ *
+ * @author santosh
+ */
+@Service
+public class LogProcessorServiceImpl implements LogProcessorService {
+
+    private static final Logger LOGGER = Logger.getLogger(LogProcessorServiceImpl.class);
+
+    @Value("${lxr.insights.bucketName}")
+    private String bucketName;
+
+    @Autowired
+    private TrackDataProcessorDao trackDataProcessorDao;
+
+    private final String UTF8 = "UTF-8";
+    private static final String VALUE_DELIMITER = ":";
+    private static final String LOG_DELEMITER = "\\t";
+    private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-mm-dd HH:mm:ss");
+
+    @Override
+    public void fileParser(AmazonS3 s3Client, String keyName, String destinationKeyName) {
+        try {
+            S3Object s3object = s3Client.getObject(new GetObjectRequest(bucketName, keyName));
+            Scanner fileIn = new Scanner(new GZIPInputStream(s3object.getObjectContent()));
+            while (fileIn.hasNextLine()) {
+                String logLine = fileIn.nextLine();
+
+                if (logLine == null) {
+                    break;
+                }
+                String[] logvalues = logLine.split(LOG_DELEMITER);
+                if (!logLine.contains("/_net.gif")) {
+                    continue;
+                }
+
+                TrackData trackData = processRequest(logvalues[4], new Timestamp(sdf.parse(logvalues[0] + " " + logvalues[1]).getTime()), logvalues[11], logvalues[9], logvalues[10]);
+                NeTrackingInfo neTrackingInfo = trackDataProcessorDao.insertNeTrackingInfo(trackData.getNeTrackingInfo());
+                if (trackData.getNeTracking().getTrackingInfo().getNavigationType() == 2) {
+                    trackData.getNeTracking().setNeTrackingInfo(neTrackingInfo);
+                    trackDataProcessorDao.insertNeTracking(trackData.getNeTracking());
+                }
+
+                if (trackData.getNeOrder() != null) {
+                    trackData.getNeOrder().setNeTrackingInfo(neTrackingInfo);
+                    trackDataProcessorDao.insertOrders(trackData.getNeOrder());
+                }
+            }
+            /*Move File into another bucket*/
+
+            CopyObjectRequest copyObjRequest = new CopyObjectRequest(bucketName, keyName, bucketName, destinationKeyName);
+            s3Client.copyObject(copyObjRequest);
+            /*Deleting from previous bucket*/
+             s3Client.deleteObject(bucketName, keyName);
+
+        } catch (IOException | ParseException ex) {
+            LOGGER.info("Exception in fileParser method", ex);
+        }
+    }
+
+    public TrackData processRequest(String ipAddress, Timestamp serverTimestamp, String URL, String ref, String userAgent) {
+
+        TrackData trackData = new TrackData();
+
+        NeTrackingInfo neTrackingInfo = new NeTrackingInfo();
+        TrackingInfo trackingInfo = new TrackingInfo();
+        TrackingInfo refTrackingInfo = new TrackingInfo();
+        NeTracking neTracking = new NeTracking();
+
+        String navCookie = "";
+        String grpCookie = "";
+        String lanCookie = "";
+        String usrCookie = "0";
+        String cookieParams = "";
+        try {
+            boolean isTransaction = false;
+            int business_id = Integer.parseInt(getURLParam(URL, CommonFunctions.BUSASSID, CommonFunctions.NUMBER_TYPE));
+            cookieParams = URLDecoder.decode(getURLParam(URL, CommonFunctions.NE_COOKIES, CommonFunctions.STRING_TYPE), UTF8);
+            if (!cookieParams.equals("")) {
+
+                navCookie = getCookieValueByName(CommonFunctions.COOKIE_NAME, cookieParams);
+                grpCookie = getCookieValueByName(CommonFunctions.GROUP_COOKIE_NAME, cookieParams);
+                lanCookie = getCookieValueByName(CommonFunctions.SECOOKIE, cookieParams);
+                usrCookie = getCookieValueByName(CommonFunctions.USER_COOKIE, cookieParams);
+                usrCookie = isNumeric(usrCookie) ? usrCookie : "0";
+            }
+            String sessionId = getURLParam(URL, CommonFunctions.SESSIONID, CommonFunctions.STRING_TYPE);
+            byte is_redirect = Byte.parseByte(getURLParam(URL, CommonFunctions.NE_REDIREC, CommonFunctions.NUMBER_TYPE));
+            int convType = Integer.parseInt(getURLParam(URL, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE));
+
+            trackingInfo.setBusinessAssociateId(business_id);
+            String userAgentDecoded = URLDecoder.decode(URLDecoder.decode(userAgent, UTF8), UTF8);
+            readRefUrlTrackingValues(URL, neTrackingInfo, trackingInfo, refTrackingInfo, usrCookie, ipAddress, userAgentDecoded);
+
+            getDetailsFromUserAgent(userAgentDecoded, trackingInfo);
+            if (is_redirect == 0) {
+                readUrlTrackingValues(URL, serverTimestamp, neTrackingInfo, navCookie, usrCookie, trackingInfo, refTrackingInfo, neTracking);
+
+                /*TODO: This is related to ne_track_all table*/
+                readCookieValues(business_id, trackingInfo, sessionId, navCookie, lanCookie, usrCookie);
+            } else { // is_redirect!= 0
+                readUrlTrackingValuesForRedirection(URL, serverTimestamp, neTrackingInfo, navCookie, usrCookie,
+                        trackingInfo, refTrackingInfo, neTracking);
+                getRedirectCookie(URL, neTrackingInfo, navCookie, trackingInfo, refTrackingInfo);
+
+                if (trackingInfo.getLandingType() == 0) {
+                    trackingInfo.setLandingType((byte) CommonFunctions.DIRECT);
+                }
+                readCookieValuesForRedirection(neTrackingInfo, trackingInfo, sessionId, lanCookie, navCookie, 30);
+            }
+            if (getURLParam(URL, CommonFunctions.NE_JS, CommonFunctions.NUMBER_TYPE).equals("0") && getURLParam(URL, CommonFunctions.NE_REDIREC, CommonFunctions.NUMBER_TYPE).equals("0")) {
+                trackingInfo.setLandingType((byte) CommonFunctions.SCRIPT_DISABLED);
+            }
+
+            NeOrder neOrder = new NeOrder();
+
+//            NeOrderItems neOrderItems = new NeOrderItems();
+            List<NeOrderItems> neorderItemsList = new ArrayList<>();
+
+            if (trackingInfo.getConversion() == 1) {
+                String transCode = getURLParam(URL, CommonFunctions.NE_TRANS, CommonFunctions.STRING_TYPE);
+                if ((transCode != null && !(transCode.equalsIgnoreCase(""))) || transCode.contains(CommonFunctions.NE_TRANS)) {
+//                    readOrderAndItemValues(URL, business_id, serverTimestamp, neOrderInf, neOrderItemsCol, is_redirect, convType);
+//                    isTransaction = true;
+
+                    /*TODO:  This is related to Margin Table*/
+//                    isTransaction = true;
+                }
+                transCode = getURLParam(URL, CommonFunctions.LXR_TCODE, CommonFunctions.STRING_TYPE);
+                if (transCode != null && !(transCode.equalsIgnoreCase(""))) {
+                    String userName = getURLParam(URL, CommonFunctions.LXR_USER, CommonFunctions.STRING_TYPE);
+                    String email = getURLParam(URL, CommonFunctions.LXR_USER_EMAIL, CommonFunctions.STRING_TYPE);
+                    long userId = 0;
+                    if (getURLParam(URL, CommonFunctions.LXR_USER_EMAIL, CommonFunctions.NUMBER_TYPE) != null) {
+                        userId = Long.parseLong(getURLParam(URL, CommonFunctions.LXR_USER_ID, CommonFunctions.NUMBER_TYPE));
+                    }
+                    trackingInfo.setUserName(userName);
+                    trackingInfo.setEmailId(email);
+                    trackingInfo.setUserId(userId);
+                    readUrlOrderValues(URL, business_id, serverTimestamp, neOrder, is_redirect, convType);
+                    readUrlOrderItemValues(URL, neorderItemsList, neOrder);
+                    isTransaction = true;
+                }
+            }
+            neTrackingInfo.setTrackingInfo(trackingInfo);
+            neTracking.setTrackingInfo(trackingInfo);
+            trackData.setNeTrackingInfo(neTrackingInfo);
+            trackData.setNeTracking(neTracking);
+            if (trackData.getNeTracking().getTrackingInfo().getNavigationType() == 2 && isTransaction) {
+                neOrder.setNeOrderItemsList(neorderItemsList);
+                trackData.setNeOrder(neOrder);
+            } else {
+                trackData.setNeOrder(null);
+            }
+
+        } catch (Exception ex) {
+            LOGGER.error("Error in Proccesing the log", ex);
+        }
+        return trackData;
+
+    }
+
+    protected void readUrlOrderItemValues(String strUrlGen, List<NeOrderItems> neOrderItemsList, NeOrder neOrder) throws Exception {
+
+        try {
+            String transCode = getURLParam(strUrlGen, CommonFunctions.LXR_TCODE, CommonFunctions.STRING_TYPE);
+            if (transCode != null && getURLParam(strUrlGen, CommonFunctions.LXR_TI_CODE, CommonFunctions.STRING_TYPE) != null) {
+
+                NeOrderItems neOrderItems;
+                long totLines = 0;
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TLINECOUNT, CommonFunctions.NUMBER_TYPE) != null) {
+                    totLines = Long.parseLong(getURLParam(strUrlGen, CommonFunctions.LXR_TLINECOUNT, CommonFunctions.NUMBER_TYPE));
+                }
+                if (totLines > 0) {
+                    for (int i = 0; i < totLines; i++) {
+                        neOrderItems = new NeOrderItems();
+                        neOrderItems.setClientOrderId(neOrder.getClientOrderId());
+                        try {
+                            neOrderItems.setSkuCode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.LXR_ISKUCODE + (i + 1), CommonFunctions.STRING_TYPE), UTF8), UTF8), UTF8), UTF8));
+                        } catch (Exception e) {
+                            neOrderItems.setSkuCode(getURLParam(strUrlGen, CommonFunctions.LXR_ISKUCODE + (i + 1), CommonFunctions.STRING_TYPE));
+                        }
+                        try {
+                            neOrderItems.setProductName(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.LXR_IPNAME + (i + 1), CommonFunctions.STRING_TYPE), UTF8), UTF8), UTF8), UTF8));
+                        } catch (Exception e) {
+                            neOrderItems.setProductName(getURLParam(strUrlGen, CommonFunctions.LXR_IPNAME + (i + 1), CommonFunctions.STRING_TYPE));
+                        }
+
+                        try {
+                            neOrderItems.setCategory(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.LXR_ICATEGORY + (i + 1), CommonFunctions.STRING_TYPE), UTF8), UTF8), UTF8), UTF8));
+                        } catch (Exception e) {
+                            neOrderItems.setCategory(getURLParam(strUrlGen, CommonFunctions.LXR_ICATEGORY + (i + 1), CommonFunctions.STRING_TYPE));
+                        }
+
+                        if (getURLParam(strUrlGen, CommonFunctions.LXR_IPRICE + (i + 1), CommonFunctions.NUMBER_TYPE) != null) {
+                            neOrderItems.setPrice(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_IPRICE + (i + 1), CommonFunctions.NUMBER_TYPE)));
+                        }
+                        if (getURLParam(strUrlGen, CommonFunctions.LXR_IQUANTITY + (i + 1), CommonFunctions.NUMBER_TYPE) != null) {
+                            neOrderItems.setQuantity(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.LXR_IQUANTITY + (i + 1), CommonFunctions.NUMBER_TYPE)));
+                        }
+                        if (getURLParam(strUrlGen, CommonFunctions.LXR_ITOTAL + (i + 1), CommonFunctions.NUMBER_TYPE) != null) {
+                            neOrderItems.setTotal(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_ITOTAL + (i + 1), CommonFunctions.NUMBER_TYPE)));
+                        }
+                        if (getURLParam(strUrlGen, CommonFunctions.LXR_IMARGIN + (i + 1), CommonFunctions.NUMBER_TYPE) != null) {
+                            neOrderItems.setMargin(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_IMARGIN + (i + 1), CommonFunctions.NUMBER_TYPE)));
+                        }
+                        if (getURLParam(strUrlGen, CommonFunctions.LXR_IDESC + (i + 1), CommonFunctions.STRING_TYPE) != null) {
+                            neOrderItems.setDescription(getURLParam(strUrlGen, CommonFunctions.LXR_IDESC + (i + 1), CommonFunctions.STRING_TYPE));
+                        }
+                        neOrderItems.setItemParam1(getURLParam(strUrlGen, CommonFunctions.LXR_IPARAM + (i + 1) + "1", CommonFunctions.STRING_TYPE));
+                        neOrderItems.setItemParam2(getURLParam(strUrlGen, CommonFunctions.LXR_IPARAM + (i + 1) + "2", CommonFunctions.STRING_TYPE));
+                        neOrderItems.setItemParam3(getURLParam(strUrlGen, CommonFunctions.LXR_IPARAM + (i + 1) + "3", CommonFunctions.STRING_TYPE));
+                        neOrderItems.setItemParam4(getURLParam(strUrlGen, CommonFunctions.LXR_IPARAM + (i + 1) + "4", CommonFunctions.STRING_TYPE));
+                        neOrderItems.setItemParam5(getURLParam(strUrlGen, CommonFunctions.LXR_IPARAM + (i + 1) + "5", CommonFunctions.STRING_TYPE));
+
+                        neOrderItemsList.add(neOrderItems);
+                    }
+                }
+                neOrder.setNeOrderItemsList(neOrderItemsList);
+            }
+        } catch (Exception ex) {
+            LOGGER.info("Exception in reading order values", ex);
+        }
+    }
+
+    private String getURLParam(String strHref, String strParamName, byte type) {
+        String strReturn = "", retValue = "";
+//        if (strHref.contains("?")) {
+//            String strQueryString = strHref.substring(strHref.indexOf("?")).toLowerCase();
+        String aQueryString[] = strHref.split("&");
+        for (String queryString : aQueryString) {
+            if (queryString.contains(strParamName + "=")) {
+                String[] aParam = queryString.split("=");
+                if (aParam.length > 1) {
+                    strReturn = aParam[1];
+                }
+                break;
+            }
+        }
+//        }
+        if (type == CommonFunctions.STRING_TYPE) {// String
+            retValue = (strReturn == null ? "" : strReturn.trim());
+        }
+        if (type == CommonFunctions.NUMBER_TYPE) { // number{
+            retValue = ((strReturn == null || strReturn.equals("")) ? "0" : strReturn.trim());
+            try {
+                retValue = URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(retValue, UTF8), UTF8), UTF8), UTF8);
+            } catch (Exception e) {
+                LOGGER.error("Exception in decoding number type", e);
+            }
+            try {
+
+                retValue = retValue.replaceAll("\\,", "").replaceAll("\\$", "").trim();
+            } catch (NumberFormatException nfe) {
+                //nfe.printStackTrace();
+                LOGGER.error("NumberFormat Exception", nfe);
+                retValue = "0";
+            }
+        } else if (type == CommonFunctions.DATE_TYPE) { // Date & Timestamp
+            retValue = ((strReturn == null || strReturn.equals("")) ? "0" : strReturn.trim());
+        }
+        return retValue;
+    }
+
+    public boolean isNumeric(String str) {
+        try {
+            double d = Double.parseDouble(str);
+        } catch (NumberFormatException nfe) {
+            return false;
+        }
+        return true;
+    }
+
+    private String getCookieValueByName(String cookieName, String cookieParams) {
+
+        int start = cookieParams.indexOf(cookieName + "=");
+        if (start == -1) {
+            return "";
+        }
+        start += cookieName.length() + 1;
+        int end = cookieParams.indexOf(';', start);
+        if (end == -1) {
+            end = cookieParams.length();
+        }
+        if (cookieParams.substring(start, end).equals("false")) {
+            return "";
+        } else {
+            return cookieParams.substring(start, end);
+        }
+
+    }
+
+    private void readRefUrlTrackingValues(String URL, NeTrackingInfo neTrackingInfo, TrackingInfo trackingInfo, TrackingInfo refTrackingInfo, String userCookie, String ipAddress,
+            String userAgent) {
+
+        String httpId, userId;
+        userId = httpId = userCookie;
+        trackingInfo.setUserAgent(userAgent);
+        trackingInfo.setUserId(Long.parseLong(userId));
+        trackingInfo.setHttpId(Long.parseLong(httpId));
+        trackingInfo.setIpAddress(ipAddress);
+        if (URL != null && !URL.equals("")) {
+            String colDep = getURLParam(URL, "ne_cd", CommonFunctions.NUMBER_TYPE);
+            if (colDep != null && !colDep.equals("")) {
+                neTrackingInfo.setColorDepth(Long.parseLong(colDep));
+            }
+        }
+
+        try {
+            String strRef = getURLParam(URL, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE);
+            if (strRef == null || strRef.equals("")) {
+                return;
+            }
+
+            String ne_ppc_id = getURLParam(strRef, CommonFunctions.NE_PPC_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_key_id = getURLParam(strRef, CommonFunctions.NE_KWD_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_adgrp_id = getURLParam(strRef, CommonFunctions.NE_ADGRP_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_ad_id = getURLParam(strRef, CommonFunctions.NE_AD_ID, CommonFunctions.NUMBER_TYPE);
+
+            if (ne_ppc_id != null && !ne_ppc_id.equals("")) {
+                refTrackingInfo.setPPCId(Long.parseLong(ne_ppc_id));
+            }
+            if (ne_key_id != null && !ne_key_id.equals("")) {
+                refTrackingInfo.setKeywordId(Long.parseLong(ne_key_id));
+            }
+
+            if (ne_adgrp_id != null && !ne_adgrp_id.equals("")) {
+                refTrackingInfo.setADGroupId(Long.parseLong(ne_adgrp_id));
+            }
+
+            if (ne_ad_id != null && !ne_ad_id.equals("")) {
+                refTrackingInfo.setADCopyId(Integer.parseInt(ne_ad_id));
+            }
+
+            if (refTrackingInfo.getPPCId() > 0) {
+//            if (netRefInf.getPPCId() > 0 && netRefInf.getKeywordId() > 0) {
+                //netRefInf.landingType= SPONSERED;
+                refTrackingInfo.setLandingType((byte) CommonFunctions.SPONSERED);
+            } else if ((refTrackingInfo.getPPCId() > 0) && (refTrackingInfo.getADGroupId() > 0 || refTrackingInfo.getADCopyId() > 0)) {
+                refTrackingInfo.setLandingType((byte) CommonFunctions.CONTENT_MATCH);
+            }
+
+        } catch (Exception ex) {
+            LOGGER.info("Exception in readRefUrlTrackingValues method", ex);
+        }
+    }
+
+    protected void readUrlTrackingValues(String strUrlGen, Timestamp serverTimeStamp, NeTrackingInfo neTrackingInfo,
+            String navCookie, String usrCookie, TrackingInfo trackingInfo, TrackingInfo refTrackingInfo,
+            NeTracking neTracking) {
+        try {
+
+            String strNavCookie = navCookie;
+            Calendar cal = Calendar.getInstance();
+            cal.setTimeInMillis(serverTimeStamp.getTime());
+            neTracking.setAccessTime(cal.get(Calendar.HOUR_OF_DAY) + ":" + cal.get(Calendar.MINUTE));
+            trackingInfo.setServerTimeStamp(serverTimeStamp.toString());
+
+            if (strNavCookie != null && !strNavCookie.equals("")) {
+                String[] vals = strNavCookie.split(":");
+                if (vals.length > 11) {
+                    long ne_ppc_id = Long.parseLong(isNumeric(vals[3]) ? vals[3] : "0");
+                    long ne_key_id = Long.parseLong(isNumeric(vals[4]) ? vals[4] : "0");
+                    long ne_adgrp_id = Long.parseLong(isNumeric(vals[7]) ? vals[7] : "0");
+                    int ne_ad_id = Integer.parseInt(isNumeric(vals[9]) ? vals[9] : "0");
+                    long ne_loc_ad_ext_id = Long.parseLong(isNumeric(vals[11]) ? vals[11] : "0");
+
+                    trackingInfo.setPPCId(ne_ppc_id);
+                    trackingInfo.setKeywordId(ne_key_id);
+                    trackingInfo.setADGroupId(ne_adgrp_id);
+                    trackingInfo.setADCopyId(ne_ad_id);
+                    trackingInfo.setLocAdExtId(ne_loc_ad_ext_id);
+                    trackingInfo.setLandingType(isNumeric(vals[0]) ? Byte.parseByte(vals[0]) : 0);
+                    trackingInfo.setSeId(isNumeric(vals[1]) ? Integer.parseInt(vals[1]) : 0);
+                    if (trackingInfo.getKeyword() == null || trackingInfo.getKeyword().equals("")) {
+                        try {
+                            trackingInfo.setKeyword(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(vals[2], UTF8), UTF8), UTF8), UTF8));
+                        } catch (Exception e) {
+                            trackingInfo.setKeyword((vals[2]));
+                        }
+                    }
+                    if (neTrackingInfo.getClickId() == null || neTrackingInfo.getClickId().equals("")) {
+                        neTrackingInfo.setClickId(vals[6]);
+                    }
+                    trackingInfo.setDomainHash(isNumeric(vals[10]) ? Long.parseLong(vals[10]) : 0);
+                }
+            }
+
+            int conversion = (Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION, CommonFunctions.NUMBER_TYPE)));
+            trackingInfo.setConversion(conversion);
+            trackingInfo.setNavigationType(conversion == 1 ? 2 : 1);
+
+            if (trackingInfo.getPPCId() == 0 && refTrackingInfo.getPPCId() > 0) {
+                trackingInfo.setPPCId(refTrackingInfo.getPPCId());
+                trackingInfo.setKeywordId(refTrackingInfo.getKeywordId());
+                trackingInfo.setADGroupId(refTrackingInfo.getADGroupId());
+                trackingInfo.setADCopyId(refTrackingInfo.getADCopyId());
+            }
+
+            neTrackingInfo.setIsLanding(Byte.parseByte(getURLParam(strUrlGen, CommonFunctions.Is_LANDING, CommonFunctions.NUMBER_TYPE)));
+            trackingInfo.setUserType(Byte.parseByte(getURLParam(strUrlGen, CommonFunctions.IS_NEW_USR, CommonFunctions.NUMBER_TYPE)));
+            try {
+                trackingInfo.setCurrentURL(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setCurrentURL(getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                trackingInfo.setNeTitle(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setNeTitle(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE));
+            }
+
+            try {
+                trackingInfo.setReferrerURL(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setReferrerURL(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                trackingInfo.setTimeZone(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_TIMEZONE, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setTimeZone(getURLParam(strUrlGen, CommonFunctions.NE_TIMEZONE, CommonFunctions.STRING_TYPE));
+            }
+
+            if (!getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE).equals("0")) {
+                trackingInfo.setTimeStamp(new Timestamp(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE))).toString());
+            } else {
+                trackingInfo.setTimeStamp(serverTimeStamp.toString());
+            }
+            try {
+                trackingInfo.setLanguage(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_LANGUAGE, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setLanguage(getURLParam(strUrlGen, CommonFunctions.NE_LANGUAGE, CommonFunctions.STRING_TYPE));
+            }
+            trackingInfo.setScreenResolution(getURLParam(strUrlGen, CommonFunctions.NE_SCRRESOLUTION, CommonFunctions.STRING_TYPE));
+
+            neTracking.setURLGenerated(strUrlGen);
+            trackingInfo.setInfoConvType(Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE)));
+            Long userId = Long.parseLong(usrCookie);
+            trackingInfo.setUserId(userId);
+            trackingInfo.setSrcSe(getURLParam(strUrlGen, CommonFunctions.NE_SOURCE, CommonFunctions.STRING_TYPE));
+            try {
+                trackingInfo.setSeAdId(Long.parseLong(getURLParam(strUrlGen, "ne_sadid", CommonFunctions.NUMBER_TYPE)));
+            } catch (Exception e) {
+                LOGGER.info("Excpetion in seID readUrlTrackingValues", e);
+            }
+            if (trackingInfo.getLocAdExtId() == 0) {
+                trackingInfo.setLocAdExtId(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_LOCAL_AD_EXT_ID, CommonFunctions.NUMBER_TYPE)));
+            }
+            trackingInfo.setChannel(getURLParam(strUrlGen, CommonFunctions.NE_CHANNEL, CommonFunctions.STRING_TYPE));
+            try {
+                trackingInfo.setVisitData(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_VISIT_DATA, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setVisitData(getURLParam(strUrlGen, CommonFunctions.NE_VISIT_DATA, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                neTrackingInfo.setUserValue1(URLDecoder.decode(getURLParam(strUrlGen, "neup1", CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setUserValue1(getURLParam(strUrlGen, "neup1", CommonFunctions.STRING_TYPE));
+            }
+
+            try {
+                neTrackingInfo.setSearchTerm(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_KEYWORD, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setSearchTerm(getURLParam(strUrlGen, CommonFunctions.NE_KEYWORD, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                trackingInfo.setSeKeyword(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_SE_KEYWORD, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setSeKeyword(getURLParam(strUrlGen, CommonFunctions.NE_SE_KEYWORD, CommonFunctions.STRING_TYPE));
+            }
+
+            /* CURRENTLY NOT USING TO STORE INTO DATABASE*/
+            neTrackingInfo.setSearchEngingSrc(getURLParam(strUrlGen, "ne_srs", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setMatchType(getURLParam(strUrlGen, "ne_mt", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setNetworkType(getURLParam(strUrlGen, "ne_net", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setPlacementSite(getURLParam(strUrlGen, "ne_si", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue2(getURLParam(strUrlGen, "neup2", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue3(getURLParam(strUrlGen, "neup3", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue4(getURLParam(strUrlGen, "neup4", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue5(getURLParam(strUrlGen, "neup5", CommonFunctions.STRING_TYPE));
+        } catch (Exception ex) {
+            LOGGER.info("Excpetion in readUrlTrackingValues method", ex);
+        }
+    }
+
+    protected void readUrlTrackingValuesForRedirection(String strUrlGen, Timestamp serverTimestamp, NeTrackingInfo neTrackingInfo,
+            String navCookie, String usrCookie, TrackingInfo trackingInfo,
+            TrackingInfo refTrackingInfo, NeTracking neTracking) throws Exception {
+        try {
+            String strNavCookie = navCookie;
+            Calendar cal = Calendar.getInstance();
+            cal.setTimeInMillis(serverTimestamp.getTime());
+            neTracking.setAccessTime(cal.get(Calendar.HOUR_OF_DAY) + ":" + cal.get(Calendar.MINUTE));
+            trackingInfo.setServerTimeStamp(serverTimestamp.toString());
+            if (strNavCookie != null && !strNavCookie.equals("")) {
+                String[] vals = strNavCookie.split(":");
+                if (vals.length >= 16) {
+                    long ne_ppc_id = Long.parseLong(isNumeric(vals[4]) ? vals[4] : "0");
+                    long ne_key_id = Long.parseLong(isNumeric(vals[5]) ? vals[5] : "0");
+                    long ne_adgrp_id = Long.parseLong(isNumeric(vals[10]) ? vals[10] : "0");
+                    int ne_ad_id = Integer.parseInt(isNumeric(vals[16]) ? vals[16] : "0");
+
+                    trackingInfo.setPPCId(ne_ppc_id);
+                    trackingInfo.setKeywordId(ne_key_id);
+                    trackingInfo.setADGroupId(ne_adgrp_id);
+                    trackingInfo.setADCopyId(ne_ad_id);
+                    trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                    trackingInfo.setSeId(Integer.parseInt(vals[2]));
+                    trackingInfo.setIpAddress(vals[11]);
+                    trackingInfo.setCurrentURL(vals[13]);
+                }
+            }
+            int conversion = (Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION, CommonFunctions.NUMBER_TYPE)));
+            trackingInfo.setConversion(conversion);
+            trackingInfo.setNavigationType(conversion == 1 ? 2 : 1);
+
+            ////////////////////////////////////////////
+            if (trackingInfo.getPPCId() == 0 && refTrackingInfo.getPPCId() > 0) {
+                trackingInfo.setPPCId(refTrackingInfo.getPPCId());
+                trackingInfo.setKeywordId(refTrackingInfo.getKeywordId());
+                trackingInfo.setADGroupId(refTrackingInfo.getADGroupId());
+                trackingInfo.setADCopyId(refTrackingInfo.getADCopyId());
+                if (trackingInfo.getLandingType() != 0) {
+                    trackingInfo.setLandingType(refTrackingInfo.getLandingType());
+                } else {
+                    trackingInfo.setLandingType((byte) CommonFunctions.DIRECT);
+                }
+            } else if (refTrackingInfo == null) {
+                trackingInfo.setLandingType((byte) CommonFunctions.DIRECT);
+            }
+            ///////////////////////////////////////////
+//            trackingInfo.setBusinessAssociateId(busAssInfId);
+
+            trackingInfo.setUserType(Byte.parseByte(getURLParam(strUrlGen, CommonFunctions.IS_NEW_USR, CommonFunctions.NUMBER_TYPE)));
+            try {
+                trackingInfo.setReferrerURL(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setReferrerURL(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE));
+            }
+
+//        String strLoc = crs.getString("Locale");
+//        if (strLoc == null) {
+//          strLoc = "en_US";
+//        }
+            Locale l = new Locale("en_US");
+            Calendar cal1 = Calendar.getInstance(l);
+            trackingInfo.setTimeZone(cal1.getTimeZone().getOffset(cal1.getTime().getTime()) / (60 * 1000) + "");
+            SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy.HH.mm.ss.SSS");
+            String strDate = sdf.format(cal1.getTime());
+            trackingInfo.setTimeStamp(strDate);
+            trackingInfo.setLanguage(l.getLanguage());
+            neTracking.setURLGenerated(strUrlGen);
+            trackingInfo.setInfoConvType(Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE)));
+            Long userId = Long.parseLong(usrCookie);
+            trackingInfo.setUserId(userId);
+            try {
+                trackingInfo.setSeAdId(Long.parseLong(getURLParam(strUrlGen, "ne_sadid", CommonFunctions.NUMBER_TYPE)));
+            } catch (Exception e) {
+                LOGGER.info("Excpetion in seId readUrlTrackingValuesForRedirection method", e);
+            }
+            trackingInfo.setLocAdExtId(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_LOCAL_AD_EXT_ID, CommonFunctions.NUMBER_TYPE)));
+            trackingInfo.setChannel(getURLParam(strUrlGen, CommonFunctions.NE_CHANNEL, CommonFunctions.STRING_TYPE));
+            trackingInfo.setVisitData(getURLParam(strUrlGen, CommonFunctions.NE_VISIT_DATA, CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue1(getURLParam(strUrlGen, "neup", CommonFunctions.STRING_TYPE));//For Redirection changed from up1 to up
+            neTrackingInfo.setSearchTerm(getURLParam(strUrlGen, CommonFunctions.NE_KEYWORD, CommonFunctions.STRING_TYPE));
+            trackingInfo.setSeKeyword(getURLParam(strUrlGen, CommonFunctions.NE_SE_KEYWORD, CommonFunctions.STRING_TYPE));
+            trackingInfo.setSrcSe(getURLParam(strUrlGen, CommonFunctions.NE_SOURCE, CommonFunctions.STRING_TYPE));
+
+            // CURRENTLY NOT USING
+            neTrackingInfo.setSearchEngingSrc(getURLParam(strUrlGen, "ne_srs", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setMatchType(getURLParam(strUrlGen, "ne_mt", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setNetworkType(getURLParam(strUrlGen, "ne_net", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setPlacementSite(getURLParam(strUrlGen, "ne_si", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue2(getURLParam(strUrlGen, "neup2", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue3(getURLParam(strUrlGen, "neup3", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue4(getURLParam(strUrlGen, "neup4", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue5(getURLParam(strUrlGen, "neup5", CommonFunctions.STRING_TYPE));
+        } catch (Exception ex) {
+            LOGGER.info("Excpetion in readUrlTrackingValuesForRedirection method", ex);
+        }
+    }
+
+    public void getRedirectCookie(String strUrlGen, NeTrackingInfo neTrackingInfo, String navCookie,
+            TrackingInfo trackingInfo, TrackingInfo refTrackingInfo) {
+        try {
+
+            String cookieValue = null;
+            int seCode = 0;
+            String keyword = "";
+            String clickId = "";
+            long ppc_id = 0;
+            long kwd_id = 0;
+            long adgrp_id = 0;
+            int ad_id = 0;
+            String referer_url = null;
+            String current_url = null;
+            cookieValue = navCookie;
+            if (cookieValue != null && !cookieValue.equals("")) {
+                try {
+
+                    cookieValue = replaceChars(cookieValue).replace(":", "%7C");
+                    String values[] = cookieValue.split("%7C");
+                    if (values.length >= 16) {
+                        referer_url = values[12].replace("$", ":");
+                        if (referer_url != null) {
+                            if (referer_url.equalsIgnoreCase("null") || referer_url.equalsIgnoreCase("")) {
+                                referer_url = null;
+                            }
+                        }
+                        current_url = values[13].replace("$", ":");
+                        if (!values[4].equals("")) {
+                            ppc_id = Long.parseLong(isNumeric(values[4]) ? values[4] : "0");
+                        }
+                        if (!values[5].equals("")) {
+                            kwd_id = Long.parseLong(isNumeric(values[5]) ? values[5] : "0");
+                        }
+                        if (!values[10].equals("")) {
+                            adgrp_id = Long.parseLong(isNumeric(values[10]) ? values[10] : "0");
+                        }
+                        if (values.length > 16) {
+                            if (!values[16].equals("")) {
+                                ad_id = Integer.parseInt(isNumeric(values[16]) ? values[16] : "0");
+                            }
+                        }
+                        if (!values[2].equals("")) {
+                            seCode = Integer.parseInt(values[2]);
+                        }
+                        keyword = values[3];
+                        clickId = values[9];
+                    }
+                } catch (Exception ex) {
+                    LOGGER.info("Excpetion in cookieValue", ex);
+                }
+
+            }
+            try {
+                if (referer_url == null) {
+                    referer_url = trackingInfo.getReferrerURL();
+                }
+            } catch (Exception ex) {
+            }
+            if (current_url == null) {
+                current_url = getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE);
+            }
+            if (current_url != null) {
+                if (current_url.equalsIgnoreCase("")) {
+                    current_url = getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE);
+                }
+            }
+
+            trackingInfo.setPPCId(ppc_id);
+            trackingInfo.setKeywordId(kwd_id);
+            trackingInfo.setADGroupId(adgrp_id);
+            trackingInfo.setADCopyId(ad_id);
+            if (current_url == null) {
+                try {
+                    current_url = URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE), UTF8), UTF8);
+                } catch (Exception e) {
+                    current_url = getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE);
+                }
+            }
+            try {
+                trackingInfo.setCurrentURL(URLDecoder.decode(URLDecoder.decode(current_url, UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setCurrentURL(current_url);
+            }
+
+            //if (request.getParameter(NE_CONVERSION) != null) {
+            int conversion = (Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION, CommonFunctions.NUMBER_TYPE)));
+            trackingInfo.setConversion(conversion);
+            //} else {
+            // netInf.setConversion(0);
+            //}
+            if (seCode > 0) {
+                trackingInfo.setSeId(seCode);
+            }
+            ////////////////////////////////////////////
+            if (trackingInfo.getPPCId() == 0) {
+                trackingInfo.setPPCId(refTrackingInfo.getPPCId());
+                trackingInfo.setKeywordId(refTrackingInfo.getKeywordId());
+                if (refTrackingInfo.getLandingType() != 0) {
+                    trackingInfo.setLandingType(refTrackingInfo.getLandingType());
+                }
+            }
+
+            try {
+                trackingInfo.setNeTitle(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                trackingInfo.setNeTitle(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE));
+            }
+            if (referer_url == null || referer_url.equalsIgnoreCase("null")) {
+                referer_url = "";
+            }
+            if (trackingInfo.getReferrerURL() == null && trackingInfo.getReferrerURL().equals("")) {
+                trackingInfo.setReferrerURL(referer_url);
+            }
+//      String strLoc = crs.getString("Locale");
+//      if (strLoc == null) {
+//        strLoc = "en_US";
+//      }
+            final Locale baseLoc = new Locale("en_US");
+            final Calendar cal1 = Calendar.getInstance(baseLoc);
+            trackingInfo.setTimeZone(String.valueOf(cal1.getTimeZone().getOffset(cal1.getTime().getTime()) / (60 * 1000)));
+            final SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy.HH.mm.ss.SSS", baseLoc);
+            final String strDate = sdf.format(cal1.getTime());
+//            netInf.setTimeStamp(strDate);
+            trackingInfo.setLanguage(baseLoc.getLanguage());
+            trackingInfo.setScreenResolution(getURLParam(strUrlGen, CommonFunctions.NE_SCRRESOLUTION, CommonFunctions.STRING_TYPE));
+            if (keyword != null && (!keyword.equalsIgnoreCase("null"))) {
+                trackingInfo.setKeyword(keyword);
+            }
+            if (clickId != null && (!clickId.equalsIgnoreCase("null"))) {
+                neTrackingInfo.setClickId(clickId);
+            }
+
+        } catch (Exception ex) {
+            LOGGER.info("Excpetion in getRedirectCookie method", ex);
+        }
+    }
+
+    protected void readCookieValues(long business_id,
+            TrackingInfo trackingInfo, String currSessionId, String navCookie, String lanCookie, String usrCookie) throws Exception {
+
+        String[] landSessinIds;
+        String finalValue;
+        try {
+
+            trackingInfo.setSessionId(currSessionId);
+            if (trackingInfo.getConversion() == 1) {
+//                finalValue = lanCookie;
+//                if (finalValue != null && !(finalValue.equals(""))) {
+//                    finalValue = replaceChars(finalValue);
+//                    String[] vals1 = finalValue.split(VALUE_DELIMITER);
+//                    landSessinIds = getLandingTrackAndSessionId(business_id, usrCookie, new Timestamp(Long.parseLong(vals1[3])).toString());
+//                    if (landSessinIds[0] != null && !landSessinIds[0].equals("")) {
+//                        netInf.setLandingTrackId(Long.parseLong(landSessinIds[0]));
+//                    }
+//                    netInf.setLandingTime(new Timestamp(Long.parseLong(vals1[3])));
+//                    if (landSessinIds[1] != null && !landSessinIds[0].equals("") && !landSessinIds[1].equals(currSessionId)) {
+//                        netInf.setLateConversion((byte) 1);
+//                    }
+//                }
+            }
+        } catch (Exception ex) {
+            LOGGER.info("Excpetion in readCookieValues method", ex);
+        }
+    }
+
+    protected void readCookieValuesForRedirection(
+            NeTrackingInfo neTrackingInfo, TrackingInfo trackingInfo, String currSessionId, String lanCookie, String navCookie, int age) throws Exception {
+        String[] vals;
+        String finalValue;
+        try {
+
+            trackingInfo.setSessionId(currSessionId);
+            byte landType = 0;
+            if (trackingInfo.getConversion() == 1) {
+                finalValue = lanCookie;
+                if (finalValue != null && !(finalValue.equals(""))) {
+                    finalValue = replaceChars(finalValue);
+                    String[] vals1 = finalValue.split(VALUE_DELIMITER);
+                    trackingInfo.setLandingTime((Timestamp.valueOf(vals1[5] + ":" + vals1[6] + ":" + vals1[7])).toString());
+                    trackingInfo.setLandingTrackID(Integer.parseInt(vals1[4]));
+                }
+            }
+            finalValue = "";
+            finalValue = navCookie;
+
+            if (finalValue != null && !(finalValue.equals(""))) {
+                finalValue = replaceChars(finalValue);
+                if (finalValue.split(VALUE_DELIMITER).length > 16) {
+                    vals = readCookieArray(finalValue.split(VALUE_DELIMITER));
+
+                    if (vals[4] == null || vals[4].equals("")) {
+                        vals[4] = "0";
+                    }
+                    if (vals[5] == null || vals[5].equals("")) {
+                        vals[5] = "0";
+                    }
+                    if (vals[2] == null || vals[2].equals("")) {
+                        vals[2] = "0";
+                    }
+                    if (vals[1] == null || vals[1].equals("")) {
+                        vals[1] = "0";
+                    }
+                    if (trackingInfo.getBusinessAssociateId() == 0) {
+                        try {
+                            trackingInfo.setBusinessAssociateId(Integer.parseInt(vals[13]));
+                        } catch (Exception ex) {
+                        }
+                    }
+                    if (vals[0].equals(currSessionId)) {
+                        if ((trackingInfo.getLandingType() != CommonFunctions.DIRECT && trackingInfo.getLandingType() != CommonFunctions.ORGANIC) && (Byte.parseByte(vals[1]) != CommonFunctions.DIRECT && Byte.parseByte(vals[1]) != CommonFunctions.ORGANIC)) {
+                            trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                        } else if ((trackingInfo.getLandingType() == 0 || trackingInfo.getLandingType() == CommonFunctions.DIRECT || trackingInfo.getLandingType() == CommonFunctions.ORGANIC) && Byte.parseByte(vals[1]) != CommonFunctions.DIRECT) {
+                            trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                            if (trackingInfo.getSeId() == 0) {
+                                trackingInfo.setSeId(Byte.parseByte(vals[2]));
+                            }
+                            if (trackingInfo.getKeyword() == null || trackingInfo.getKeyword().equals("")) {
+                                trackingInfo.setKeyword((vals[3]));
+                            }
+                            if (neTrackingInfo.getClickId() == null || neTrackingInfo.getClickId().equals("")) {
+                                neTrackingInfo.setClickId(vals[7]);
+                            }
+
+                            if (trackingInfo.getPPCId() == 0) {
+                                trackingInfo.setPPCId(Long.parseLong(vals[4]));
+                            }
+                            if (trackingInfo.getKeywordId() == 0) {
+                                trackingInfo.setKeywordId(Long.parseLong(vals[5]));
+                            }
+                            long tempId = 0;
+                            try {
+                                tempId = Long.parseLong(vals[8]);
+                            } catch (Exception e) {
+                            }
+                            if (trackingInfo.getADGroupId() == 0) {
+                                trackingInfo.setADGroupId(tempId);
+                            }
+                            if (trackingInfo.getADCopyId() == 0) {
+                                trackingInfo.setADCopyId(Integer.parseInt(vals[14]));
+                            }
+                            if (trackingInfo.getIpAddress() == null || trackingInfo.getIpAddress().equals("")) {
+                                trackingInfo.setIpAddress(vals[9]);
+                            }
+                        } else if ((Byte.parseByte(vals[1]) == CommonFunctions.DIRECT || Byte.parseByte(vals[1]) == CommonFunctions.ORGANIC) && (trackingInfo.getLandingType() != CommonFunctions.DIRECT)) {
+                            if (trackingInfo.getPPCId() == 0) {
+                                trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                            }
+                        }
+                    } else if (!vals[0].equals(currSessionId)) {
+                        if ((trackingInfo.getLandingType() == CommonFunctions.DIRECT || trackingInfo.getLandingType() == CommonFunctions.ORGANIC) && (landType == CommonFunctions.SPONSERED || landType == CommonFunctions.CONTENT_MATCH || landType == CommonFunctions.SEARCH_MATCH)) {
+                            if (trackingInfo.getLandingType() == CommonFunctions.ORGANIC && trackingInfo.getConversion() == 0 && trackingInfo.getPPCId() == 0) {
+                            } else {
+                                trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                                if (trackingInfo.getBusinessAssociateId() == Long.parseLong(vals[13])) {
+                                    trackingInfo.setPPCId(Long.parseLong(vals[4]));
+                                    if (trackingInfo.getSeId() == 0) {
+                                        trackingInfo.setSeId(Integer.parseInt(vals[2]));
+                                    }
+                                    if (trackingInfo.getKeyword() == null || trackingInfo.getKeyword().equals("")) {
+                                        trackingInfo.setKeyword((vals[3]));
+                                    }
+                                    if (trackingInfo.getKeywordId() == 0) {
+                                        trackingInfo.setKeywordId(Long.parseLong(vals[5]));
+                                    }
+                                    if (neTrackingInfo.getClickId() == null || neTrackingInfo.getClickId().equals("")) {
+                                        neTrackingInfo.setClickId(vals[7]);
+                                    }
+                                    if (trackingInfo.getADGroupId() == 0) {
+                                        trackingInfo.setADGroupId(Long.parseLong(vals[8]));
+                                    }
+                                    if (trackingInfo.getADCopyId() == 0) {
+                                        trackingInfo.setADCopyId(Integer.parseInt(vals[14]));
+                                    }
+                                    if (trackingInfo.getIpAddress() == null || trackingInfo.getIpAddress().equals("")) {
+                                        trackingInfo.setIpAddress(vals[9]);
+                                    }
+                                }
+                            }
+                            if (trackingInfo.getConversion() == 1) {
+                                trackingInfo.setLateConversion(1 + "");
+                            }
+                        } else if (trackingInfo.getLandingType() != CommonFunctions.DIRECT && trackingInfo.getLandingType() != CommonFunctions.ORGANIC && trackingInfo.getLandingType() != 0) {
+                            if (Byte.parseByte(vals[1]) == CommonFunctions.SPONSERED) {
+                                trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                            }
+                        } else {//           
+                            trackingInfo.setLandingType(Byte.parseByte(vals[1]));
+                            if (trackingInfo.getSeId() == 0) {
+                                trackingInfo.setSeId(Integer.parseInt(vals[2]));
+                            }
+                            try {
+                                if (Long.parseLong(vals[4]) > 0 && trackingInfo.getPPCId() == 0) {
+                                    trackingInfo.setPPCId(Long.parseLong(vals[4]));
+                                    if (trackingInfo.getKeywordId() == 0) {
+                                        trackingInfo.setKeywordId(Long.parseLong(vals[5]));
+                                    }
+                                    if (trackingInfo.getADGroupId() == 0) {
+                                        trackingInfo.setADGroupId(Long.parseLong(vals[8]));
+                                    }
+                                    if (trackingInfo.getADCopyId() == 0) {
+                                        trackingInfo.setADCopyId(Integer.parseInt(vals[14]));
+                                    }
+                                    if (trackingInfo.getKeyword() == null || trackingInfo.getKeyword().equals("")) {
+                                        trackingInfo.setKeyword((vals[3]));
+                                    }
+                                }
+                            } catch (Exception ex) {
+                            }
+                        }
+
+                    }
+
+                }
+            }
+        } catch (Exception ex) {
+
+        }
+    }
+
+    private String replaceChars(String val) {
+
+        if (val.indexOf("http://") > 0) {
+            val = val.replace("http://", "http//");
+        }
+        if (val.indexOf("https://") > 0) {
+            val = val.replace("https://", "https//");
+        }
+        return val;
+    }
+
+    private String[] readCookieArray(String[] vals) {
+        String[] finalVals = new String[vals.length - 2];
+        //String[] finalVals= new String[10];
+        try {
+            finalVals[0] = vals[0];
+            finalVals[1] = vals[1];
+            if (vals[2].equalsIgnoreCase("") || vals[2].equalsIgnoreCase("null")) {
+                vals[2] = "0";
+            }
+            finalVals[2] = vals[2];
+            finalVals[3] = vals[3];
+            if (vals[4].equalsIgnoreCase("") || vals[4].equalsIgnoreCase("null")) {
+                vals[4] = "0";
+            }
+            finalVals[4] = vals[4];
+            if (vals[5].equalsIgnoreCase("") || vals[5].equalsIgnoreCase("null")) {
+                vals[5] = "0";
+            }
+            finalVals[5] = vals[5];
+            finalVals[6] = vals[6] + ":" + vals[7] + ":" + vals[8];
+            finalVals[7] = vals[9];
+            if (vals[10].equalsIgnoreCase("") || vals[10].equalsIgnoreCase("null")) {
+                vals[10] = "0";
+            }
+            finalVals[8] = vals[10];
+
+            if (vals.length > 11) {
+                finalVals[9] = vals[11];
+            }
+            if (vals.length > 12) {
+                //From redirection
+                finalVals[10] = vals[12];
+                finalVals[11] = vals[13];
+                finalVals[12] = vals[14];
+                if (vals[15].equalsIgnoreCase("") || vals[15].equalsIgnoreCase("null")) {
+                    vals[15] = "0";
+                }
+                finalVals[13] = vals[15];
+                if (vals.length > 16) {
+                    if (vals[16].equalsIgnoreCase("") || vals[16].equalsIgnoreCase("null")) {
+                        vals[16] = "0";
+                    }
+                    finalVals[14] = vals[16];
+                }
+            }
+        } catch (Exception ex) {
+        }
+        return finalVals;
+    }
+
+    protected void readUrlOrderValues(String strUrlGen, int busAssId, Timestamp serverTimestamp, NeOrder neOrder, byte is_redirect, int convType) throws Exception {
+        try {
+
+            if (getURLParam(strUrlGen, CommonFunctions.LXR_TCODE, CommonFunctions.STRING_TYPE) != null) {
+//                if (is_redirect != 0) {
+                neOrder.setTimestamp(serverTimestamp.toString());
+//                } 
+//                else if (!getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE).equals("0")) {
+//                    neOrderInf.setTimeStamp(new Timestamp(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE))));
+//                } 
+//                else {
+//                    neOrder.setTimeStamp(new Timestamp((serverTimestamp.getTime())));
+//                }
+
+                neOrder.setBusinessAssociateId(busAssId);
+                neOrder.setConvType(convType);
+
+                try {
+                    neOrder.setClientOrderId(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.LXR_TCOID, CommonFunctions.STRING_TYPE), UTF8), UTF8), UTF8), UTF8));
+                } catch (Exception e) {
+                    neOrder.setClientOrderId(getURLParam(strUrlGen, CommonFunctions.LXR_TCOID, CommonFunctions.STRING_TYPE));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TTOT, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setTotal(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_TTOT, CommonFunctions.NUMBER_TYPE)));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TTAX, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setTax(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_TTAX, CommonFunctions.NUMBER_TYPE)));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TSHIPPING, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setShipping(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_TSHIPPING, CommonFunctions.NUMBER_TYPE)));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TMARGIN, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setTotalMargin(Double.parseDouble(getURLParam(strUrlGen, CommonFunctions.LXR_TMARGIN, CommonFunctions.NUMBER_TYPE)));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TDESC, CommonFunctions.STRING_TYPE) != null) {
+                    neOrder.setDescription(getURLParam(strUrlGen, CommonFunctions.LXR_TDESC, CommonFunctions.STRING_TYPE));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TLINECOUNT, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setLineCount(Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.LXR_TLINECOUNT, CommonFunctions.NUMBER_TYPE)));
+                }
+                if (getURLParam(strUrlGen, CommonFunctions.LXR_TITEMCOUNT, CommonFunctions.NUMBER_TYPE) != null) {
+                    neOrder.setItemsCount(Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.LXR_TITEMCOUNT, CommonFunctions.NUMBER_TYPE)));
+                }
+                neOrder.setOrderValue1(getURLParam(strUrlGen, CommonFunctions.LXR_TPARAM1, CommonFunctions.STRING_TYPE));
+                neOrder.setOrderValue2(getURLParam(strUrlGen, CommonFunctions.LXR_TPARAM2, CommonFunctions.STRING_TYPE));
+                neOrder.setOrderValue3(getURLParam(strUrlGen, CommonFunctions.LXR_TPARAM3, CommonFunctions.STRING_TYPE));
+                neOrder.setOrderValue4(getURLParam(strUrlGen, CommonFunctions.LXR_TPARAM4, CommonFunctions.STRING_TYPE));
+                neOrder.setOrderValue5(getURLParam(strUrlGen, CommonFunctions.LXR_TPARAM5, CommonFunctions.STRING_TYPE));
+
+            }
+        } catch (Exception ex) {
+            LOGGER.info("Exception in reading order values", ex);
+        }
+    }
+
+    public void getDetailsFromUserAgent(String userAgent, TrackingInfo trackingInfo) {
+        UserAgentStringParser parser = UADetectorServiceFactory.getResourceModuleParser();
+        ReadableUserAgent agent = parser.parse(userAgent);
+        trackingInfo.setBrowserType(agent.getType().getName());
+        trackingInfo.setBrowserName(agent.getName());
+
+        VersionNumber browserVersion = agent.getVersionNumber();
+        trackingInfo.setBrowserVersion(browserVersion.toVersionString());
+
+        // device category
+        ReadableDeviceCategory device = agent.getDeviceCategory();
+        trackingInfo.setDeviceType(device.getName());
+
+        // operating system
+        OperatingSystem os = agent.getOperatingSystem();
+        trackingInfo.setOsName(os.getName());
+        VersionNumber osVersion = os.getVersionNumber();
+        trackingInfo.setOsVersion(osVersion.toVersionString());
+    }
+
+    /*TODO: NE_MARGIN usage in older version*/
+//    protected void readOrderAndItemValues(String strUrlGen, long business_id, Timestamp serverTimestamp, NeOrder neOrder, NeOrderItems neOrderItems, byte is_redirect, long convType) throws Exception {
+//
+//        try {
+//            String coid = null, iCoid = null, skuCode = null, proName = null, cat = null, desc = null, idesc = null, param[] = new String[5], iparam[] = new String[5];
+//            double tot = 0.0, tax = 0.0, shipping = 0.0, price = 0.0, qty = 0.0, itot = 0.0, itemsCount = 0.0, totQty = 0.0, margin = 0.0, imargin = 0.0;
+//            NeOrderItems neOrderItems;
+//            long noOfLines = 0;
+//            Long busAssId = business_id;
+//            String transCode = null;
+//            transCode = getURLParam(strUrlGen, CommonFunctions.NE_TRANS, CommonFunctions.STRING_TYPE);
+//            if (transCode == null) {
+//                String qryStr = getQueryString(strUrlGen);
+//                if (qryStr != null) {
+//                    if ((qryStr.indexOf("ne_trans") > -1)) {
+//                        int idx = 0;
+//                        if (qryStr.indexOf("ne_trans=") > -1) {
+//                            idx = qryStr.indexOf("ne_trans=") + 9;
+//                        } else if (qryStr.indexOf("ne_trans%3D") > -1) {
+//                            idx = qryStr.indexOf("ne_trans%3D") + 11;
+//                        }
+//                        String tempCode = qryStr.substring(idx);
+//                        if (tempCode.contains("&") || (tempCode.contains("%") && transCode == null) || tempCode.contains("#") || tempCode.contains("+")) {
+//                            tempCode = decodeVals(tempCode);
+//                            transCode = tempCode;
+//                        }
+//                    }
+//                }
+//            }
+//            neOrderInf.setConvType(convType);
+//            if (is_redirect != 0) {
+//                neOrderInf.setTimeStamp(new Timestamp((serverTimestamp.getTime())));
+//            }
+////            else if (!getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE).equals("0")) {
+////                neOrderInf.setTimeStamp(new Timestamp(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE))));
+////            } 
+//            else {
+//                neOrderInf.setTimeStamp(new Timestamp((serverTimestamp.getTime())));
+//            }
+////      try {
+////        if (getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE) != null) {
+////          if (getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE).trim().length() == 0) {
+////            neOrderInf.setConvType(99);
+////          } else {
+////            neOrderInf.setConvType(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE)));
+////          }
+////        }
+////      } catch (Exception ex) {
+////        neOrderInf.setConvType(98);
+////        System.out.println("Error:13:In Conv. Type is_" + getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE));
+////      }
+//            if (transCode != null && !(transCode.equalsIgnoreCase(""))) {
+//                java.util.Date currentTime = new java.util.Date();
+//                String tcoid1 = "LXR_" + currentTime.getTime();
+//                transCode = transCode.replace("\n", "").toUpperCase();
+//                String recArr[] = transCode.split(CommonFunctions.REC_SEP);
+//                for (int ii = 0; ii < recArr.length; ii++) {
+//                    recArr[ii] = recArr[ii].trim();
+//                    if (recArr[ii].equalsIgnoreCase("")) {
+//                        continue;
+//                    }
+//                    if (recArr[ii].charAt(0) != CommonFunctions.REC_TRAN && recArr[ii].charAt(0) != CommonFunctions.REC_ITEM) {
+//                        continue;
+//                    }
+//                    String f[] = recArr[ii].replace(CommonFunctions.FLD_SEP, CommonFunctions.pipeOpr + " ").split(CommonFunctions.pipeOpr);
+//                    if (f[0].charAt(0) == CommonFunctions.REC_TRAN) {
+//                        f[1] = f[1].trim();
+//                        if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ") && !f[1].equalsIgnoreCase("NULL") && !f[1].equalsIgnoreCase("0") && !f[1].equalsIgnoreCase("NUL")) {
+//                            coid = f[1];
+//                        } else {
+//                            coid = tcoid1;
+//                        }
+//                        f[2] = f[2].trim();
+//                        if (isNumeric(f[2]) && f[2] != null && !f[2].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                            tot = Double.parseDouble(f[2]);
+//                        }
+//                        f[3] = f[3].trim();
+//                        if (isNumeric(f[2]) && f[3] != null && !f[3].equalsIgnoreCase("") && !f[3].equalsIgnoreCase(" ")) {
+//                            tax = Double.parseDouble(f[3]);
+//                        }
+//                        f[4] = f[4].trim();
+//                        if (isNumeric(f[4]) && f[4] != null && !f[4].equalsIgnoreCase("") && !f[4].equalsIgnoreCase(" ")) {
+//                            shipping = Double.parseDouble(f[4]);
+//                        }
+//                        if (f.length > 5) {
+//                            f[5] = f[5].trim();
+//                            if (isNumeric(f[5]) && f[5] != null && !f[5].equalsIgnoreCase("") && !f[5].equalsIgnoreCase(" ")) {
+//                                margin = Double.parseDouble(f[5]);
+//                            }
+//                            f[6] = f[6].trim();
+//                            if (f[6] != null && !f[6].equalsIgnoreCase("") && !f[6].equalsIgnoreCase(" ")) {
+//                                desc = f[6];
+//                            }
+//                            for (int k = 7; k < 12; k++) {
+//                                f[k] = f[k].trim();
+//                                if (f[k] != null && !f[k].equalsIgnoreCase("") && !f[k].equalsIgnoreCase(" ")) {
+//                                    param[k - 7] = f[k];
+//                                }
+//                            }
+//                        }
+//                        neOrderInf.setClientOrderId(coid);
+//                        neOrderInf.setTotal(tot);
+//                        neOrderInf.setTax(tax);
+//                        neOrderInf.setShipping(shipping);
+//                        neOrderInf.setTotalMrg(margin);
+//                        neOrderInf.setDesc(desc);
+//                        neOrderInf.setOrderValue1(param[0]);
+//                        neOrderInf.setOrderValue2(param[1]);
+//                        neOrderInf.setOrderValue3(param[2]);
+//                        neOrderInf.setOrderValue4(param[3]);
+//                        neOrderInf.setOrderValue5(param[4]);
+//                    } else {
+//                        if (f.length <= 7) {
+////            f[1] = f[1].trim();
+////
+////            if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ") && !f[1].equalsIgnoreCase("NULL") && !f[1].equalsIgnoreCase("0") && !f[1].equalsIgnoreCase("NUL")) {
+////              iCoid = f[1];
+////            } else {
+////              iCoid = tcoid1;
+////            }
+//
+//                            /*if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ")) {
+//                             iCoid = f[1];
+//                             }*/
+//                            f[1] = f[1].trim();
+//                            if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ")) {
+//                                skuCode = f[1];
+//                            }
+//                            f[2] = f[2].trim();
+//                            if (f[2] != null && !f[2].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                proName = f[2];
+//                            }
+//                            f[3] = f[3].trim();
+//                            if (f[3] != null && !f[3].equalsIgnoreCase("") && !f[3].equalsIgnoreCase(" ")) {
+//                                cat = f[3];
+//                            }
+//                            f[4] = f[4].trim();
+//                            if (isNumeric(f[4]) && f[4] != null && !f[4].equalsIgnoreCase("") && !f[4].equalsIgnoreCase(" ")) {
+//                                price = Double.parseDouble(f[4]);
+//                            }
+//                            f[5] = f[5].trim();
+//                            if (isNumeric(f[5]) && f[5] != null && !f[5].equalsIgnoreCase("") && !f[5].equalsIgnoreCase(" ")) {
+//                                qty = Double.parseDouble(f[5]);
+//                            }
+//
+//                            f[6] = f[6].trim();
+//                            if (isNumeric(f[6]) && f[6] != null && !f[6].equalsIgnoreCase("") && !f[6].equalsIgnoreCase(" ")) {
+//                                itot = Double.parseDouble(f[6]);
+//                            }
+//                        } else {
+//                            f[1] = f[1].trim();
+//
+//                            if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ") && !f[1].equalsIgnoreCase("NULL") && !f[1].equalsIgnoreCase("0") && !f[1].equalsIgnoreCase("NUL")) {
+//                                iCoid = f[1];
+//                            } else {
+//                                iCoid = tcoid1;
+//                            }
+//
+//                            /*if (f[1] != null && !f[1].equalsIgnoreCase("") && !f[1].equalsIgnoreCase(" ")) {
+//                             iCoid = f[1];
+//                             }*/
+//                            f[2] = f[2].trim();
+//                            if (f[2] != null && !f[2].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                skuCode = f[2];
+//                            }
+//                            f[3] = f[3].trim();
+//                            if (f[3] != null && !f[3].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                proName = f[3];
+//                            }
+//                            f[4] = f[4].trim();
+//                            if (f[4] != null && !f[4].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                cat = f[4];
+//                            }
+//                            f[5] = f[5].trim();
+//                            if (isNumeric(f[5]) && f[5] != null && !f[5].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                price = Double.parseDouble(f[5]);
+//                            }
+//                            f[6] = f[6].trim();
+//                            if (isNumeric(f[6]) && f[6] != null && !f[6].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                qty = Double.parseDouble(f[6]);
+//                            }
+//
+//                            f[7] = f[7].trim();
+//                            if (isNumeric(f[7]) && f[7] != null && !f[7].equalsIgnoreCase("") && !f[2].equalsIgnoreCase(" ")) {
+//                                itot = Double.parseDouble(f[7]);
+//                            }
+//                        }
+////            if (f.length > 8) {
+////              f[8] = f[8].trim();
+////              if (f[8] != null && !f[8].equalsIgnoreCase("") && !f[8].equalsIgnoreCase(" ")) {
+////                imargin = Double.parseDouble(f[8]);
+////              }
+////              f[9] = f[9].trim();
+////              if (f[9] != null && !f[9].equalsIgnoreCase("") && !f[9].equalsIgnoreCase(" ")) {
+////                idesc = f[9];
+////              }
+////              for (int k = 9; k < 14; k++) {
+////                f[k] = f[k].trim();
+////                if (f[k] != null && !f[k].equalsIgnoreCase("") && !f[k].equalsIgnoreCase(" ")) {
+////                  param[k - 9] = f[k];
+////                }
+////              }
+//
+//                        neOrderItemInf = new NeOrderItemInf();
+//                        neOrderItemInf.setDBConnection(neOrderItemsCol.getDBConnection());
+//                        neOrderItemInf.setClientOrderId(neOrderInf.getClientOrderId());
+//                        neOrderItemInf.setSkuCode(skuCode);
+//                        neOrderItemInf.setProductName(proName);
+//                        neOrderItemInf.setCategory(cat);
+//                        neOrderItemInf.setPrice(price);
+//                        neOrderItemInf.setQuantity(qty);
+//                        neOrderItemInf.setTotal(itot);
+//                        neOrderItemInf.setMargin(imargin);
+//                        neOrderItemInf.setDesc(idesc);
+//                        neOrderItemInf.setItemParam1(iparam[0]);
+//                        neOrderItemInf.setItemParam2(iparam[1]);
+//                        neOrderItemInf.setItemParam3(iparam[2]);
+//                        neOrderItemInf.setItemParam4(iparam[3]);
+//                        neOrderItemInf.setItemParam5(iparam[4]);
+//                        neOrderItemsCol.addObject(neOrderItemInf);
+//                        totQty += qty;
+//                    }
+//                }
+//
+//                noOfLines = recArr.length - 2;
+//                itemsCount = totQty;
+//                //neOrderInf.setTimeStamp(new Timestamp((new java.util.Date()).getTime()));
+//                //if (busAssId != null && (!busAssId.equals(""))) {
+//                neOrderInf.setBusAssId(busAssId);
+//                //}
+//                neOrderInf.setLineCount(noOfLines);
+//                neOrderInf.setItemsCount(itemsCount);
+//            }
+//        } catch (Exception ex) {
+//            log.log(Level.SEVERE, "Exception in reading Order and Item values from url", ex);
+//            ex.printStackTrace();
+//        }
+//    }
+    @Override
+    public long fetchMaxTrackingId() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+}

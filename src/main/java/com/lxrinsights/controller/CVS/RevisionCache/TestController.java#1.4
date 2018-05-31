@@ -1,0 +1,42 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.controller;
+
+import com.lxrinsights.dao.TrackDataProcessorDao;
+import com.lxrinsights.scheduler.S3FilesFetchingTask;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+/**
+ *
+ * @author santosh
+ */
+@Controller
+public class TestController {
+    
+    @Autowired
+    private TrackDataProcessorDao trackDataProcessorDao;
+    
+    @Autowired
+    private S3FilesFetchingTask s3FilesFetchingTask;
+    
+    @RequestMapping(value = "/test-trans.html")
+    public String test(){
+        s3FilesFetchingTask.fetchFilesFromS3Bucket();
+        return "test";
+    }
+    
+    @RequestMapping(value = "/index.html")
+    public String homePage(){
+        return "homePage";
+    }
+    
+    @RequestMapping(value = "/")
+    public String homePage1(){
+        return "homePage";
+    }
+}

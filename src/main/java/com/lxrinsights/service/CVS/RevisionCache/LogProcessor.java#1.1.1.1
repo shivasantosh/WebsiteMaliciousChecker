@@ -1,0 +1,338 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.service;
+
+import com.lxrinsights.model.NeTrackingInfo;
+import com.lxrinsights.util.CommonFunctions;
+import java.net.URLDecoder;
+import java.sql.Timestamp;
+import java.util.Calendar;
+import org.apache.log4j.Logger;
+
+/**
+ *
+ * @author santosh
+ */
+public class LogProcessor {
+
+    private static final Logger LOGGER = Logger.getLogger(LogProcessor.class);
+
+    private final String UTF8 = "UTF-8";
+    private long curr_bus_id = 0;
+
+    public void processRequest(String ipAddress, Timestamp serverTimestamp, String URL, String ref, String userAgent) {
+
+        NeTrackingInfo neTrackingInfo = new NeTrackingInfo();
+        NeTrackingInfo neRefTrackingInfo = new NeTrackingInfo();
+        String navCookie = "";
+        String grpCookie = "";
+        String lanCookie = "";
+        String usrCookie = "0";
+        String cookieParams = "";
+        try {
+            int business_id = Integer.parseInt(getURLParam(URL, CommonFunctions.BUSASSID, CommonFunctions.NUMBER_TYPE));
+            curr_bus_id = business_id;
+            cookieParams = URLDecoder.decode(getURLParam(URL, CommonFunctions.NE_COOKIES, CommonFunctions.STRING_TYPE), UTF8);
+            if (!cookieParams.equals("")) {
+
+                navCookie = getCookieValueByName(CommonFunctions.COOKIE_NAME, cookieParams);
+                grpCookie = getCookieValueByName(CommonFunctions.GROUP_COOKIE_NAME, cookieParams);
+                lanCookie = getCookieValueByName(CommonFunctions.SECOOKIE, cookieParams);
+                usrCookie = getCookieValueByName(CommonFunctions.USER_COOKIE, cookieParams);
+                usrCookie = isNumeric(usrCookie) ? usrCookie : "0";
+            }
+            String sessionId = getURLParam(URL, CommonFunctions.SESSIONID, CommonFunctions.STRING_TYPE);
+            byte is_redirect = Byte.parseByte(getURLParam(URL, CommonFunctions.NE_REDIREC, CommonFunctions.NUMBER_TYPE));
+            long convType = Long.parseLong(getURLParam(URL, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE));
+
+            readRefUrlTrackingValues(URL, neRefTrackingInfo, usrCookie, ipAddress, userAgent);
+
+            if (is_redirect == 0) {
+                readUrlTrackingValues(URL, serverTimestamp, neTrackingInfo, business_id, neRefTrackingInfo, navCookie, usrCookie);
+                readCookieValues(business_id, neTrackingInfo, sessionId, navCookie, lanCookie, usrCookie, 30);
+            } else { // is_redirect!= 0
+                readUrlTrackingValuesForRedirection(URL, serverTimestamp, neTrackingInfo, business_id, navCookie, neRefTrackingInfo, usrCookie);
+                getRedirectCookie(URL, neTrackingInfo, neRefTrackingInfo, navCookie);
+
+                if (neTrackingInfo.getLandingType() == 0) {
+                    neTrackingInfo.setLandingType((byte) CommonFunctions.DIRECT);
+                }
+                readCookieValuesForRedirection(neTrackingInfo, sessionId, lanCookie, navCookie, 30);
+            }
+            if (getURLParam(URL, CommonFunctions.NE_JS, CommonFunctions.NUMBER_TYPE).equals("0") && getURLParam(URL, CommonFunctions.NE_REDIREC, CommonFunctions.NUMBER_TYPE).equals("0")) {
+                neTrackingInfo.setLandingType((byte) CommonFunctions.SCRIPT_DISABLED);
+            }
+
+        } catch (Exception ex) {
+            LOGGER.error("Error in Proccesing the log", ex);
+        }
+
+    }
+
+    private String getURLParam(String strHref, String strParamName, byte type) {
+        String strReturn = "", retValue = "";
+        if (strHref.contains("?")) {
+            String strQueryString = strHref.substring(strHref.indexOf("?")).toLowerCase();
+            String aQueryString[] = strQueryString.split("&");
+            for (String queryString : aQueryString) {
+                if (queryString.contains(strParamName + "=")) {
+                    String[] aParam = queryString.split("=");
+                    if (aParam.length > 1) {
+                        strReturn = aParam[1];
+                    }
+                    break;
+                }
+            }
+        }
+        if (type == CommonFunctions.STRING_TYPE) {// String
+            retValue = (strReturn == null ? "" : strReturn.trim());
+        }
+        if (type == CommonFunctions.NUMBER_TYPE) { // number{
+            retValue = ((strReturn == null || strReturn.equals("")) ? "0" : strReturn.trim());
+            try {
+                retValue = URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(retValue, UTF8), UTF8), UTF8), UTF8);
+            } catch (Exception e) {
+                LOGGER.error("Exception in decoding number type", e);
+            }
+            try {
+
+                retValue = retValue.replaceAll("\\,", "").replaceAll("\\$", "").trim();
+            } catch (NumberFormatException nfe) {
+                //nfe.printStackTrace();
+                LOGGER.error("NumberFormat Exception", nfe);
+                retValue = "0";
+            }
+        } else if (type == CommonFunctions.DATE_TYPE) { // Date & Timestamp
+            retValue = ((strReturn == null || strReturn.equals("")) ? "0" : strReturn.trim());
+        }
+        return retValue;
+    }
+
+    public boolean isNumeric(String str) {
+        try {
+            double d = Double.parseDouble(str);
+        } catch (NumberFormatException nfe) {
+            return false;
+        }
+        return true;
+    }
+
+    private String getCookieValueByName(String cookieName, String cookieParams) {
+
+        int start = cookieParams.indexOf(cookieName + "=");
+        if (start == -1) {
+            return "";
+        }
+        start += cookieName.length() + 1;
+        int end = cookieParams.indexOf(';', start);
+        if (end == -1) {
+            end = cookieParams.length();
+        }
+        if (cookieParams.substring(start, end).equals("false")) {
+            return "";
+        } else {
+            return cookieParams.substring(start, end);
+        }
+
+    }
+
+    private void readRefUrlTrackingValues(String URL, NeTrackingInfo neRefTrackingInfo, String userCookie, String ipAddress,
+            String userAgent) throws Exception {
+        
+        String httpId, userId;
+        userId = httpId = userCookie;
+        neRefTrackingInfo.setUserAgent(userAgent);
+        neRefTrackingInfo.setUserId(Long.parseLong(userId));
+        neRefTrackingInfo.setHttpId(Long.parseLong(httpId));
+        neRefTrackingInfo.setIPAddress(ipAddress);
+            if (URL != null && !URL.equals("")) {
+                String colDep = getURLParam(URL, "ne_cd", CommonFunctions.NUMBER_TYPE);
+                if (colDep != null && !colDep.equals("")) {
+                    neRefTrackingInfo.setColorDepth(Long.parseLong(colDep));
+                }
+            }
+
+        try {
+            String strRef = getURLParam(URL, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE);
+            if (strRef == null || strRef.equals("")) {
+                return;
+            }
+
+            String ne_ppc_id = getURLParam(strRef, CommonFunctions.NE_PPC_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_key_id = getURLParam(strRef, CommonFunctions.NE_KWD_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_adgrp_id = getURLParam(strRef, CommonFunctions.NE_ADGRP_ID, CommonFunctions.NUMBER_TYPE);
+            String ne_ad_id = getURLParam(strRef, CommonFunctions.NE_AD_ID, CommonFunctions.NUMBER_TYPE);
+
+            if (ne_ppc_id != null && !ne_ppc_id.equals("")) {
+                neRefTrackingInfo.setPPCId(Long.parseLong(ne_ppc_id));
+            }
+            if (ne_key_id != null && !ne_key_id.equals("")) {
+                neRefTrackingInfo.setKeywordId(Long.parseLong(ne_key_id));
+            }
+
+            if (ne_adgrp_id != null && !ne_adgrp_id.equals("")) {
+                neRefTrackingInfo.setADGroupId(Long.parseLong(ne_adgrp_id));
+            }
+
+            if (ne_ad_id != null && !ne_ad_id.equals("")) {
+                neRefTrackingInfo.setAdCopyId(Long.parseLong(ne_ad_id));
+            }
+
+            if (neRefTrackingInfo.getPPCId() > 0) {
+//            if (netRefInf.getPPCId() > 0 && netRefInf.getKeywordId() > 0) {
+                //netRefInf.landingType= SPONSERED;
+                neRefTrackingInfo.setLandingType((byte) CommonFunctions.SPONSERED);
+            } else if ((neRefTrackingInfo.getPPCId() > 0) && (neRefTrackingInfo.getADGroupId() > 0 || neRefTrackingInfo.getAdCopyId() > 0)) {
+                neRefTrackingInfo.setLandingType((byte) CommonFunctions.CONTENT_MATCH);
+            }
+
+        } catch (Exception ex) {
+            throw ex;
+        }
+    }
+
+    protected void readUrlTrackingValues(String strUrlGen, Timestamp serverTimeStamp, NeTrackingInfo neTrackingInfo,
+            int busAssInfId, NeTrackingInfo neRefTrackingInfo, String navCookie, String usrCookie) throws Exception {
+        try {
+
+            String strNavCookie = navCookie;
+            Calendar cal = Calendar.getInstance();
+            cal.setTimeInMillis(serverTimeStamp.getTime());
+            neTrackingInfo.setAccesstime(cal.get(Calendar.HOUR_OF_DAY) + ":" + cal.get(Calendar.MINUTE));
+            neTrackingInfo.setServertime(new Timestamp((serverTimeStamp.getTime())));
+
+            if (strNavCookie != null && !strNavCookie.equals("")) {
+                String[] vals = strNavCookie.split(":");
+                if (vals.length > 11) {
+                    long ne_ppc_id = Long.parseLong(isNumeric(vals[3]) ? vals[3] : "0");
+                    long ne_key_id = Long.parseLong(isNumeric(vals[4]) ? vals[4] : "0");
+                    long ne_adgrp_id = Long.parseLong(isNumeric(vals[7]) ? vals[7] : "0");
+                    long ne_ad_id = Long.parseLong(isNumeric(vals[9]) ? vals[9] : "0");
+                    long ne_loc_ad_ext_id = Long.parseLong(isNumeric(vals[11]) ? vals[11] : "0");
+
+                    neTrackingInfo.setPPCId(ne_ppc_id);
+                    neTrackingInfo.setKeywordId(ne_key_id);
+                    neTrackingInfo.setADGroupId(ne_adgrp_id);
+                    neTrackingInfo.setAdCopyId(ne_ad_id);
+                    neTrackingInfo.setLocAdExtId(ne_loc_ad_ext_id);
+                    neTrackingInfo.setLandingType(isNumeric(vals[0]) ? Byte.parseByte(vals[0]) : 0);
+                    neTrackingInfo.setSearchEngineId(isNumeric(vals[1]) ? Long.parseLong(vals[1]) : 0);
+                    if (neTrackingInfo.getKeyword() == null || neTrackingInfo.getKeyword().equals("")) {
+                        try {
+                            neTrackingInfo.setKeyword(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(URLDecoder.decode(vals[2], UTF8), UTF8), UTF8), UTF8));
+                        } catch (Exception e) {
+                            neTrackingInfo.setKeyword((vals[2]));
+                        }
+                    }
+                    if (neTrackingInfo.getClickId() == null || neTrackingInfo.getClickId().equals("")) {
+                        neTrackingInfo.setClickId(vals[6]);
+                    }
+                    neTrackingInfo.setDomainHash(isNumeric(vals[10]) ? Long.parseLong(vals[10]) : 0);
+                }
+            }
+
+            int conversion = (Integer.parseInt(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION, CommonFunctions.NUMBER_TYPE)));
+            neTrackingInfo.setConversion(conversion);
+            neTrackingInfo.setNavigationType(conversion == 1 ? 2 : 1);
+
+            if (neTrackingInfo.getPPCId() == 0 && neRefTrackingInfo.getPPCId() > 0) {
+                neTrackingInfo.setPPCId(neRefTrackingInfo.getPPCId());
+                neTrackingInfo.setKeywordId(neRefTrackingInfo.getKeywordId());
+                neTrackingInfo.setADGroupId(neRefTrackingInfo.getADGroupId());
+                neTrackingInfo.setAdCopyId(neRefTrackingInfo.getAdCopyId());
+            }
+
+            neTrackingInfo.setBusinessAssociateId(busAssInfId);
+
+            neTrackingInfo.setIsLanding(Byte.parseByte(getURLParam(strUrlGen, CommonFunctions.Is_LANDING, CommonFunctions.NUMBER_TYPE)));
+            neTrackingInfo.setUserType(Byte.parseByte(getURLParam(strUrlGen, CommonFunctions.IS_NEW_USR, CommonFunctions.NUMBER_TYPE)));
+            try {
+                neTrackingInfo.setCurrentURL(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setCurrentURL(getURLParam(strUrlGen, CommonFunctions.NE_URL, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                neTrackingInfo.setNeTitle(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setNeTitle(getURLParam(strUrlGen, CommonFunctions.NE_TITLE, CommonFunctions.STRING_TYPE));
+            }
+
+            try {
+                neTrackingInfo.setReferrerURL(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setReferrerURL(getURLParam(strUrlGen, CommonFunctions.NE_REFFERRER, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                neTrackingInfo.setTimeZone(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_TIMEZONE, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setTimeZone(getURLParam(strUrlGen, CommonFunctions.NE_TIMEZONE, CommonFunctions.STRING_TYPE));
+            }
+
+            if (!getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE).equals("0")) {
+                neTrackingInfo.setTimeStamp(new Timestamp(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_DATE, CommonFunctions.NUMBER_TYPE))).toString());
+            } else {
+                neTrackingInfo.setTimeStamp(serverTimeStamp.toString());
+            }
+            try {
+                neTrackingInfo.setLanguage(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_LANGUAGE, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setLanguage(getURLParam(strUrlGen, CommonFunctions.NE_LANGUAGE, CommonFunctions.STRING_TYPE));
+            }
+            neTrackingInfo.setScreenResolution(getURLParam(strUrlGen, CommonFunctions.NE_SCRRESOLUTION, CommonFunctions.STRING_TYPE));
+
+            neTrackingInfo.setUrlGenerated(strUrlGen);
+            neTrackingInfo.setConversionType(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_CONVERSION_TYPE, CommonFunctions.NUMBER_TYPE)));
+            Long userId = Long.parseLong(usrCookie);
+            neTrackingInfo.setUserId(userId);
+            neTrackingInfo.setSourceEngine(getURLParam(strUrlGen, CommonFunctions.NE_SOURCE, CommonFunctions.STRING_TYPE));
+            try {
+                neTrackingInfo.setSeAdId(Long.parseLong(getURLParam(strUrlGen, "ne_sadid", CommonFunctions.NUMBER_TYPE)));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            if (neTrackingInfo.getLocAdExtId() == 0) {
+                neTrackingInfo.setLocAdExtId(Long.parseLong(getURLParam(strUrlGen, CommonFunctions.NE_LOCAL_AD_EXT_ID, CommonFunctions.NUMBER_TYPE)));
+            }
+            neTrackingInfo.setChannel(getURLParam(strUrlGen, CommonFunctions.NE_CHANNEL, CommonFunctions.STRING_TYPE));
+            try {
+                neTrackingInfo.setVisitData(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_VISIT_DATA, CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setVisitData(getURLParam(strUrlGen, CommonFunctions.NE_VISIT_DATA, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                neTrackingInfo.setUserValue1(URLDecoder.decode(getURLParam(strUrlGen, "neup1", CommonFunctions.STRING_TYPE), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setUserValue1(getURLParam(strUrlGen, "neup1", CommonFunctions.STRING_TYPE));
+            }
+
+            try {
+                neTrackingInfo.setSearchTerm(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_KEYWORD, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setSearchTerm(getURLParam(strUrlGen, CommonFunctions.NE_KEYWORD, CommonFunctions.STRING_TYPE));
+            }
+            try {
+                neTrackingInfo.setSeKeyword(URLDecoder.decode(URLDecoder.decode(getURLParam(strUrlGen, CommonFunctions.NE_SE_KEYWORD, CommonFunctions.STRING_TYPE), UTF8), UTF8));
+            } catch (Exception e) {
+                neTrackingInfo.setSeKeyword(getURLParam(strUrlGen, CommonFunctions.NE_SE_KEYWORD, CommonFunctions.STRING_TYPE));
+            }
+
+            /* CURRENTLY NOT USING TO STORE INTO DATABASE*/
+            neTrackingInfo.setSearchEngingSrc(getURLParam(strUrlGen, "ne_srs", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setMatchType(getURLParam(strUrlGen, "ne_mt", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setNetworkType(getURLParam(strUrlGen, "ne_net", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setPlacementSite(getURLParam(strUrlGen, "ne_si", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue2(getURLParam(strUrlGen, "neup2", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue3(getURLParam(strUrlGen, "neup3", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue4(getURLParam(strUrlGen, "neup4", CommonFunctions.STRING_TYPE));
+            neTrackingInfo.setUserValue5(getURLParam(strUrlGen, "neup5", CommonFunctions.STRING_TYPE));
+        } catch (Exception ex) {
+            throw ex;
+        }
+    }
+    
+}   
+
+    

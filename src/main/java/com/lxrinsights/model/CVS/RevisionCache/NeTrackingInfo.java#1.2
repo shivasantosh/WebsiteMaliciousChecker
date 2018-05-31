@@ -1,0 +1,213 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import java.io.Serializable;
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
+import javax.persistence.Transient;
+
+/**
+ *
+ * @author santosh
+ */
+@Entity
+@Table(name = "NE_TRACKING_INFO_NEW")
+public class NeTrackingInfo implements Serializable {
+    @Id
+    @Column(name = "NE_TRACKING_ID")
+    private long neTrackingId;
+    @Column(name = "MATCH_TYPE")
+    private String matchType;
+    @Column(name = "CONVERSION_IND")
+    private int conversionInd;
+    @Column(name = "ACCOUNT_DATE")
+    private String accountDate;
+    @Column(name = "IS_LANDING")
+    private int isLanding;
+    @Column(name = "IP_FROM")
+    private long ipFrom;
+    @Transient
+    private long colorDepth;
+    @Transient
+    private String clickId;
+    @Embedded
+    private TrackingInfo trackingInfo;
+    @Transient 
+    private String userValue1;
+    @Transient 
+    private String userValue2;
+    @Transient 
+    private String userValue3;
+    @Transient 
+    private String userValue4;
+    @Transient 
+    private String userValue5;
+    @Transient
+    private String searchTerm;
+    @Transient
+    private String searchEngingSrc;
+    @Transient 
+    private String networkType;
+    @Transient
+    private String placementSite;
+
+    public long getNeTrackingId() {
+        return neTrackingId;
+    }
+
+    public void setNeTrackingId(long neTrackingId) {
+        this.neTrackingId = neTrackingId;
+    }
+
+    public String getMatchType() {
+        return matchType;
+    }
+
+    public void setMatchType(String matchType) {
+        this.matchType = matchType;
+    }
+
+    public int getConversionInd() {
+        return conversionInd;
+    }
+
+    public void setConversionInd(int conversionInd) {
+        this.conversionInd = conversionInd;
+    }
+
+    public String getAccountDate() {
+        return accountDate;
+    }
+
+    public void setAccountDate(String accountDate) {
+        this.accountDate = accountDate;
+    }
+
+    public int getIsLanding() {
+        return isLanding;
+    }
+
+    public void setIsLanding(int isLanding) {
+        this.isLanding = isLanding;
+    }
+
+//    public String getInfoTimestamp() {
+//        return infoTimestamp;
+//    }
+//
+//    public void setInfoTimestamp(String infoTimestamp) {
+//        this.infoTimestamp = infoTimestamp;
+//    }
+
+    public long getIpFrom() {
+        return ipFrom;
+    }
+
+    public void setIpFrom(long ipFrom) {
+        this.ipFrom = ipFrom;
+    }
+
+    public long getColorDepth() {
+        return colorDepth;
+    }
+
+    public void setColorDepth(long colorDepth) {
+        this.colorDepth = colorDepth;
+    }
+
+    public TrackingInfo getTrackingInfo() {
+        return trackingInfo;
+    }
+
+    public void setTrackingInfo(TrackingInfo trackingInfo) {
+        this.trackingInfo = trackingInfo;
+    }
+
+    public String getClickId() {
+        return clickId;
+    }
+
+    public void setClickId(String clickId) {
+        this.clickId = clickId;
+    }
+
+    public String getUserValue1() {
+        return userValue1;
+    }
+
+    public void setUserValue1(String userValue1) {
+        this.userValue1 = userValue1;
+    }
+
+    public String getUserValue2() {
+        return userValue2;
+    }
+
+    public void setUserValue2(String userValue2) {
+        this.userValue2 = userValue2;
+    }
+
+    public String getUserValue3() {
+        return userValue3;
+    }
+
+    public void setUserValue3(String userValue3) {
+        this.userValue3 = userValue3;
+    }
+
+    public String getUserValue4() {
+        return userValue4;
+    }
+
+    public void setUserValue4(String userValue4) {
+        this.userValue4 = userValue4;
+    }
+
+    public String getUserValue5() {
+        return userValue5;
+    }
+
+    public void setUserValue5(String userValue5) {
+        this.userValue5 = userValue5;
+    }
+
+    public String getSearchTerm() {
+        return searchTerm;
+    }
+
+    public void setSearchTerm(String searchTerm) {
+        this.searchTerm = searchTerm;
+    }
+
+    public String getSearchEngingSrc() {
+        return searchEngingSrc;
+    }
+
+    public void setSearchEngingSrc(String searchEngingSrc) {
+        this.searchEngingSrc = searchEngingSrc;
+    }
+
+    public String getNetworkType() {
+        return networkType;
+    }
+
+    public void setNetworkType(String networkType) {
+        this.networkType = networkType;
+    }
+
+    public String getPlacementSite() {
+        return placementSite;
+    }
+
+    public void setPlacementSite(String placementSite) {
+        this.placementSite = placementSite;
+    }
+    
+}

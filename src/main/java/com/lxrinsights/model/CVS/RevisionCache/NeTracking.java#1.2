@@ -1,0 +1,142 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import java.io.Serializable;
+import javax.persistence.AttributeOverride;
+import javax.persistence.AttributeOverrides;
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
+
+/**
+ *
+ * @author santosh
+ */
+@Entity
+@Table(name = "NE_TRACKING_NEW")
+public class NeTracking implements Serializable {
+
+    @Id
+    @Column(name = "NE_TRACKING_ID")
+    private long neTrackingId;
+//    @Column(name = "TIME_STAMP")
+//    private String timeStamp;
+    @Column(name = "ACCESS_TIME")
+    private String accessTime;
+    @Column(name = "datetime")
+    private String dateTime;
+    @Column(name = "TRACKING_ID")
+    private long trackingId;
+    @Column(name = "TIME_SPENT")
+    private int timeSpent;
+    @Column(name = "URL_GENERATED")
+    private String URLGenerated;
+    @Column(name = "COOKIE_VALUES")
+    private String cookieValues;
+    @Column(name = "CAMPAIGN_ID")
+    private long campaignId;
+    @Column(name = "ACCOUNT_DATE")
+    private String accountDate;
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "ADGroupId", column = @Column(name = "ADGRP_ID")),
+        @AttributeOverride(name = "infoConvType",column = @Column(name = "CONV_TYPE")),
+        @AttributeOverride(name = "timeStamp",column = @Column(name = "TIME_STAMP"))})
+    
+    private TrackingInfo trackingInfo;
+
+//    public String getTimeStamp() {
+//        return timeStamp;
+//    }
+//
+//    public void setTimeStamp(String timeStamp) {
+//        this.timeStamp = timeStamp;
+//    }
+
+    public String getDateTime() {
+        return dateTime;
+    }
+
+    public void setDateTime(String dateTime) {
+        this.dateTime = dateTime;
+    }
+
+    public long getTrackingId() {
+        return trackingId;
+    }
+
+    public void setTrackingId(long trackingId) {
+        this.trackingId = trackingId;
+    }
+
+    public int getTimeSpent() {
+        return timeSpent;
+    }
+
+    public void setTimeSpent(int timeSpent) {
+        this.timeSpent = timeSpent;
+    }
+
+    public String getURLGenerated() {
+        return URLGenerated;
+    }
+
+    public void setURLGenerated(String URLGenerated) {
+        this.URLGenerated = URLGenerated;
+    }
+
+    public String getCookieValues() {
+        return cookieValues;
+    }
+
+    public void setCookieValues(String cookieValues) {
+        this.cookieValues = cookieValues;
+    }
+
+    public long getCampaignId() {
+        return campaignId;
+    }
+
+    public void setCampaignId(long campaignId) {
+        this.campaignId = campaignId;
+    }
+
+    public String getAccountDate() {
+        return accountDate;
+    }
+
+    public void setAccountDate(String accountDate) {
+        this.accountDate = accountDate;
+    }
+
+    public TrackingInfo getTrackingInfo() {
+        return trackingInfo;
+    }
+
+    public void setTrackingInfo(TrackingInfo trackingInfo) {
+        this.trackingInfo = trackingInfo;
+    }
+
+    public String getAccessTime() {
+        return accessTime;
+    }
+
+    public void setAccessTime(String accessTime) {
+        this.accessTime = accessTime;
+    }
+
+    public long getNeTrackingId() {
+        return neTrackingId;
+    }
+
+    public void setNeTrackingId(long neTrackingId) {
+        this.neTrackingId = neTrackingId;
+    }
+
+}

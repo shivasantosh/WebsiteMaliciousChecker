@@ -1,0 +1,178 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import java.io.Serializable;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.Table;
+import javax.persistence.Transient;
+
+/**
+ *
+ * @author santosh
+ */
+@Entity
+@Table(name = "NE_ORDER_ITEMS")
+public class NeOrderItems implements Serializable {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "ORDER_ITEM_ID")
+    private int orderItemId;
+    @Column(name = "SKU_CODE")
+    private String skuCode;
+    @Column(name = "PRODUCT_NAME")
+    private String productName;
+    @Column(name = "CATEGORY")
+    private String category;
+    @Column(name = "PRICE")
+    private double price;
+    @Column(name = "QUANTITY")
+    private long quantity;
+    @Column(name = "TOTAL")
+    private double total;
+    @Column(name = "MARGIN")
+    private double margin;
+    @Column(name = "CLIENT_ORDER_ID")
+    private String clientOrderId;
+    @Transient
+    private String description;
+    @Transient
+    private String itemParam1;
+    @Transient
+    private String itemParam2;
+    @Transient
+    private String itemParam3;
+    @Transient
+    private String itemParam4;
+    @Transient
+    private String itemParam5;
+    
+    public int getOrderItemId() {
+        return orderItemId;
+    }
+
+    public void setOrderItemId(int orderItemId) {
+        this.orderItemId = orderItemId;
+    }
+
+    public String getSkuCode() {
+        return skuCode;
+    }
+
+    public void setSkuCode(String skuCode) {
+        this.skuCode = skuCode;
+    }
+
+    public String getProductName() {
+        return productName;
+    }
+
+    public void setProductName(String productName) {
+        this.productName = productName;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
+    }
+
+    public double getPrice() {
+        return price;
+    }
+
+    public void setPrice(double price) {
+        this.price = price;
+    }
+
+    public long getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(long quantity) {
+        this.quantity = quantity;
+    }
+
+    public double getTotal() {
+        return total;
+    }
+
+    public void setTotal(double total) {
+        this.total = total;
+    }
+
+    public double getMargin() {
+        return margin;
+    }
+
+    public void setMargin(double margin) {
+        this.margin = margin;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getClientOrderId() {
+        return clientOrderId;
+    }
+
+    public void setClientOrderId(String clientOrderId) {
+        this.clientOrderId = clientOrderId;
+    }
+
+    public String getItemParam2() {
+        return itemParam2;
+    }
+
+    public void setItemParam2(String itemParam2) {
+        this.itemParam2 = itemParam2;
+    }
+
+    public String getItemParam3() {
+        return itemParam3;
+    }
+
+    public void setItemParam3(String itemParam3) {
+        this.itemParam3 = itemParam3;
+    }
+
+    public String getItemParam4() {
+        return itemParam4;
+    }
+
+    public void setItemParam4(String itemParam4) {
+        this.itemParam4 = itemParam4;
+    }
+
+    public String getItemParam5() {
+        return itemParam5;
+    }
+
+    public void setItemParam5(String itemParam5) {
+        this.itemParam5 = itemParam5;
+    }
+
+    public String getItemParam1() {
+        return itemParam1;
+    }
+
+    public void setItemParam1(String itemParam1) {
+        this.itemParam1 = itemParam1;
+    }
+    
+    
+}

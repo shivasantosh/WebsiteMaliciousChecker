@@ -1,0 +1,33 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.scheduler;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+
+/**
+ *
+ * @author santosh
+ */
+@Configuration
+@EnableScheduling
+public class SchedulerJob {
+    
+    static Log LOGGER = LogFactory.getLog(SchedulerJob.class);
+    
+    
+    @Autowired
+    private S3FilesFetchingTask s3FilesFetchingTask;
+    
+    @Scheduled(cron = "${lxr.insights.s3files.Fetch.cron}")
+    public void getS3Files(){
+        s3FilesFetchingTask.fetchFilesFromS3Bucket();
+    }
+}

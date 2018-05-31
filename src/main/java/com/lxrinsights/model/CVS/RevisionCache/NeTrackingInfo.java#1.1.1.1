@@ -1,0 +1,537 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.lxrinsights.model;
+
+import javax.persistence.Column;
+
+/**
+ *
+ * @author santosh
+ */
+public class NeTrackingInfo {
+    
+    @Column(name = "NE_TRACKING_ID")
+    private long neTrackingId;
+    @Column(name = "REFERRER_URL")
+    private String referrerURL;
+    @Column(name = "KEYWORD")
+    private String keyword;
+    @Column(name = "MATCH_TYPE")
+    private String matchType;
+    @Column(name = "IP_ADDRESS")
+    private String IPAddress;
+    @Column(name = "SERVER_TIMESTAMP")
+    private String serverTimestamp;
+    @Column(name = "SE_ID")
+    private int seId;
+    @Column(name = "LANDING_TYPE")
+    private long landingType;
+    @Column(name = "CONVERSION_IND")
+    private int conversionInd;
+    @Column(name = "PPC_ID")
+    private long PPCId;
+    @Column(name = "KEYWORD_ID")
+    private long keywordId;
+    @Column(name = "ADGROUP_ID")
+    private long ADGroupId;
+    @Column(name = "CONVERSION")
+    private int conversion;
+    @Column(name = "USER_ID")
+    private long userId;
+    @Column(name = "HTTP_ID")
+    private long httpId;
+    @Column(name = "FLASH_ID")
+    private long flashId;
+    @Column(name = "ADCOPY_ID")
+    private long adCopyId;
+    @Column(name = "NAVIGATION_TYPE")
+    private int navigationType;
+    @Column(name = "BUSINESS_ASSOCIATE_ID")
+    private int businessAssociateId;
+    @Column(name = "LANDING_TRACK_ID")
+    private long landingTrackId;
+    @Column(name = "CHANNEL")
+    private String channel;
+    @Column(name = "VISIT_DATA")
+    private String visitData;
+    @Column(name = "USER_PARAM")
+    private String userParam;
+    @Column(name = "SE_KEYWORD")
+    private String seKeyword;
+    @Column(name = "SE_AD_ID")
+    private long seAdId;
+    @Column(name = "LOCID")
+    private long locId;
+    @Column(name = "TDIFF")
+    private int timeDiff;
+    @Column(name = "ACCOUNT_DATE")
+    private String accountDate;
+    @Column(name = "CURRENT_URL")
+    private String currentURL;
+    @Column(name = "DOMAIN_HASH")
+    private long domainHash;
+    @Column(name = "USER_AGENT")
+    private String userAgent;
+    @Column(name = "LOC_AD_EXT_ID")
+    private long locAdExtId;
+    @Column(name = "IS_LANDING")
+    private int isLanding;
+    @Column(name = "NE_TITLE")
+    private String neTitle;
+    @Column(name = "INFO_TIME_STAMP")
+    private String infoTimestamp;
+    @Column(name = "TIME_ZONE")
+    private String timeZone;
+    @Column(name = "LANGUAGE")
+    private String language;
+    @Column(name = "SCREEN_RESOLUTION")
+    private String screenResolution;
+    @Column(name = "SESSIONID")
+    private String sessionId;
+    @Column(name = "LATE_CONVERSION")
+    private int lateConversion;
+    @Column(name = "USER_TYPE")
+    private int userType;
+    @Column(name = "INFO_CONV_TYPE")
+    private int infoConvType;
+    @Column(name = "SRC_SE")
+    private String srcSe;
+    @Column(name = "LANDING_TIME")
+    private String landingTime;
+    @Column(name = "BROWSER_VERSION")
+    private String browserVersion;
+    @Column(name = "BROWSER_NAME")
+    private String browserName;
+    @Column(name = "BROWSER_TYPE")
+    private String browserType;
+    @Column(name = "OS_NAME")
+    private String osName;
+    @Column(name = "OS_VERSION")
+    private String osVersion;
+    @Column(name = "DEVICE_TYPE")
+    private String deviceType;
+    @Column(name = "IP_FROM")
+    private long ipFrom;
+    private long colorDepth;
+
+    public long getNeTrackingId() {
+        return neTrackingId;
+    }
+
+    public void setNeTrackingId(long neTrackingId) {
+        this.neTrackingId = neTrackingId;
+    }
+
+    public String getReferrerURL() {
+        return referrerURL;
+    }
+
+    public void setReferrerURL(String referrerURL) {
+        this.referrerURL = referrerURL;
+    }
+
+    public String getKeyword() {
+        return keyword;
+    }
+
+    public void setKeyword(String keyword) {
+        this.keyword = keyword;
+    }
+
+    public String getMatchType() {
+        return matchType;
+    }
+
+    public void setMatchType(String matchType) {
+        this.matchType = matchType;
+    }
+
+    public String getIPAddress() {
+        return IPAddress;
+    }
+
+    public void setIPAddress(String IPAddress) {
+        this.IPAddress = IPAddress;
+    }
+
+    public String getServerTimestamp() {
+        return serverTimestamp;
+    }
+
+    public void setServerTimestamp(String serverTimestamp) {
+        this.serverTimestamp = serverTimestamp;
+    }
+
+    public int getSeId() {
+        return seId;
+    }
+
+    public void setSeId(int seId) {
+        this.seId = seId;
+    }
+
+    public long getLandingType() {
+        return landingType;
+    }
+
+    public void setLandingType(long landingType) {
+        this.landingType = landingType;
+    }
+
+    public int getConversionInd() {
+        return conversionInd;
+    }
+
+    public void setConversionInd(int conversionInd) {
+        this.conversionInd = conversionInd;
+    }
+
+    public long getPPCId() {
+        return PPCId;
+    }
+
+    public void setPPCId(long PPCId) {
+        this.PPCId = PPCId;
+    }
+
+    public long getKeywordId() {
+        return keywordId;
+    }
+
+    public void setKeywordId(long keywordId) {
+        this.keywordId = keywordId;
+    }
+
+    public long getADGroupId() {
+        return ADGroupId;
+    }
+
+    public void setADGroupId(long ADGroupId) {
+        this.ADGroupId = ADGroupId;
+    }
+
+    public int getConversion() {
+        return conversion;
+    }
+
+    public void setConversion(int conversion) {
+        this.conversion = conversion;
+    }
+
+    public long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(long userId) {
+        this.userId = userId;
+    }
+
+    public long getHttpId() {
+        return httpId;
+    }
+
+    public void setHttpId(long httpId) {
+        this.httpId = httpId;
+    }
+
+    public long getFlashId() {
+        return flashId;
+    }
+
+    public void setFlashId(long flashId) {
+        this.flashId = flashId;
+    }
+
+    public long getAdCopyId() {
+        return adCopyId;
+    }
+
+    public void setAdCopyId(long adCopyId) {
+        this.adCopyId = adCopyId;
+    }
+
+    public int getNavigationType() {
+        return navigationType;
+    }
+
+    public void setNavigationType(int navigationType) {
+        this.navigationType = navigationType;
+    }
+
+    public int getBusinessAssociateId() {
+        return businessAssociateId;
+    }
+
+    public void setBusinessAssociateId(int businessAssociateId) {
+        this.businessAssociateId = businessAssociateId;
+    }
+
+    public long getLandingTrackId() {
+        return landingTrackId;
+    }
+
+    public void setLandingTrackId(long landingTrackId) {
+        this.landingTrackId = landingTrackId;
+    }
+
+    public String getChannel() {
+        return channel;
+    }
+
+    public void setChannel(String channel) {
+        this.channel = channel;
+    }
+
+    public String getVisitData() {
+        return visitData;
+    }
+
+    public void setVisitData(String visitData) {
+        this.visitData = visitData;
+    }
+
+    public String getUserParam() {
+        return userParam;
+    }
+
+    public void setUserParam(String userParam) {
+        this.userParam = userParam;
+    }
+
+    public String getSeKeyword() {
+        return seKeyword;
+    }
+
+    public void setSeKeyword(String seKeyword) {
+        this.seKeyword = seKeyword;
+    }
+
+    public long getSeAdId() {
+        return seAdId;
+    }
+
+    public void setSeAdId(long seAdId) {
+        this.seAdId = seAdId;
+    }
+
+    public long getLocId() {
+        return locId;
+    }
+
+    public void setLocId(long locId) {
+        this.locId = locId;
+    }
+
+    public int getTimeDiff() {
+        return timeDiff;
+    }
+
+    public void setTimeDiff(int timeDiff) {
+        this.timeDiff = timeDiff;
+    }
+
+    public String getAccountDate() {
+        return accountDate;
+    }
+
+    public void setAccountDate(String accountDate) {
+        this.accountDate = accountDate;
+    }
+
+    public String getCurrentURL() {
+        return currentURL;
+    }
+
+    public void setCurrentURL(String currentURL) {
+        this.currentURL = currentURL;
+    }
+
+    public long getDomainHash() {
+        return domainHash;
+    }
+
+    public void setDomainHash(long domainHash) {
+        this.domainHash = domainHash;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
+    }
+
+    public long getLocAdExtId() {
+        return locAdExtId;
+    }
+
+    public void setLocAdExtId(long locAdExtId) {
+        this.locAdExtId = locAdExtId;
+    }
+
+    public int getIsLanding() {
+        return isLanding;
+    }
+
+    public void setIsLanding(int isLanding) {
+        this.isLanding = isLanding;
+    }
+
+    public String getNeTitle() {
+        return neTitle;
+    }
+
+    public void setNeTitle(String neTitle) {
+        this.neTitle = neTitle;
+    }
+
+    public String getInfoTimestamp() {
+        return infoTimestamp;
+    }
+
+    public void setInfoTimestamp(String infoTimestamp) {
+        this.infoTimestamp = infoTimestamp;
+    }
+
+    public String getTimeZone() {
+        return timeZone;
+    }
+
+    public void setTimeZone(String timeZone) {
+        this.timeZone = timeZone;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public String getScreenResolution() {
+        return screenResolution;
+    }
+
+    public void setScreenResolution(String screenResolution) {
+        this.screenResolution = screenResolution;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public int getLateConversion() {
+        return lateConversion;
+    }
+
+    public void setLateConversion(int lateConversion) {
+        this.lateConversion = lateConversion;
+    }
+
+    public int getUserType() {
+        return userType;
+    }
+
+    public void setUserType(int userType) {
+        this.userType = userType;
+    }
+
+    public int getInfoConvType() {
+        return infoConvType;
+    }
+
+    public void setInfoConvType(int infoConvType) {
+        this.infoConvType = infoConvType;
+    }
+
+    public String getSrcSe() {
+        return srcSe;
+    }
+
+    public void setSrcSe(String srcSe) {
+        this.srcSe = srcSe;
+    }
+
+    public String getLandingTime() {
+        return landingTime;
+    }
+
+    public void setLandingTime(String landingTime) {
+        this.landingTime = landingTime;
+    }
+
+    public String getBrowserVersion() {
+        return browserVersion;
+    }
+
+    public void setBrowserVersion(String browserVersion) {
+        this.browserVersion = browserVersion;
+    }
+
+    public String getBrowserName() {
+        return browserName;
+    }
+
+    public void setBrowserName(String browserName) {
+        this.browserName = browserName;
+    }
+
+    public String getBrowserType() {
+        return browserType;
+    }
+
+    public void setBrowserType(String browserType) {
+        this.browserType = browserType;
+    }
+
+    public String getOsName() {
+        return osName;
+    }
+
+    public void setOsName(String osName) {
+        this.osName = osName;
+    }
+
+    public String getOsVersion() {
+        return osVersion;
+    }
+
+    public void setOsVersion(String osVersion) {
+        this.osVersion = osVersion;
+    }
+
+    public String getDeviceType() {
+        return deviceType;
+    }
+
+    public void setDeviceType(String deviceType) {
+        this.deviceType = deviceType;
+    }
+
+    public long getIpFrom() {
+        return ipFrom;
+    }
+
+    public void setIpFrom(long ipFrom) {
+        this.ipFrom = ipFrom;
+    }
+
+    public long getColorDepth() {
+        return colorDepth;
+    }
+
+    public void setColorDepth(long colorDepth) {
+        this.colorDepth = colorDepth;
+    }
+
+    
+}
